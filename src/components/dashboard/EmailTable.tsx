@@ -1,53 +1,60 @@
+// Mark this component as a Next.js Client Component since it uses hooks like useState and useMemo
 'use client'
 
+// Import React hooks used for local state management and memoizing expensive calculations
 import { useState, useMemo } from 'react'
+// Import motion and AnimatePresence from framer-motion for smooth entry/exit animations of table rows
 import { motion, AnimatePresence } from 'framer-motion'
+// Import our custom UI components from the Shadcn UI library folder
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+// Import the XLSX library for exporting table data to Excel and CSV formats
 import * as XLSX from 'xlsx'
+// Import necessary SVG icons from lucide-react to visually enhance the UI
 import {
-  Search,
-  ChevronLeft,
-  ChevronRight,
-  Download,
-  SortAsc,
-  SortDesc,
-  ArrowUpDown,
-  Mail,
-  Building2,
-  Phone,
-  User,
-  Calendar,
-  FileText,
-  CheckCircle2,
-  XCircle,
-  Clock,
+  Search, ChevronLeft, ChevronRight, Download, SortAsc, SortDesc,
+  ArrowUpDown, Mail, Building2, Phone, User, Calendar, FileText,
+  CheckCircle2, XCircle, Clock,
 } from 'lucide-react'
+// Import our custom date formatting utility function
 import { formatDateTime } from '@/lib/utils'
 
+/**
+ * Interface defining the shape of a single Contact object.
+ * This matches the database schema for the 'contacts' table in Supabase.
+ */
 interface Contact {
-  id: string
-  name: string
-  email: string
-  phone_number?: string
-  company?: string
-  subject?: string
-  status: string
-  created_at: string
-  sent_at?: string
+  id: string // Unique identifier
+  name: string // Contact's full name
+  email: string // Contact's email address
+  phone_number?: string // Optional phone number
+  company?: string // Optional company name
+  subject?: string // Optional email subject line
+  status: string // Current delivery status (pending, sent, failed, etc.)
+  created_at: string // ISO timestamp of when the contact was added
+  sent_at?: string // Optional ISO timestamp of when the email was actually delivered
 }
 
+/**
+ * Interface defining the props passed to the EmailTable component.
+ */
 interface EmailTableProps {
-  contacts: Contact[]
-  loading?: boolean
+  contacts: Contact[] // Array of contacts to display
+  loading?: boolean // Optional flag to show skeleton loaders while data is fetching
 }
 
+// Constant array defining the available options for pagination (rows per page)
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
 
+/**
+ * Helper component that renders a colored Badge based on the contact's email status.
+ * @param status The string status ('sent', 'failed', 'pending', etc.)
+ */
 function StatusBadge({ status }: { status: string }) {
+  // Define a mapping object that associates each status with a color variant, icon, and label
   const map: Record<string, { variant: 'success' | 'danger' | 'warning' | 'info' | 'purple'; icon: React.ReactNode; label: string }> = {
     sent: { variant: 'success', icon: <CheckCircle2 className="w-3 h-3" />, label: 'Sent' },
     failed: { variant: 'danger', icon: <XCircle className="w-3 h-3" />, label: 'Failed' },
@@ -55,7 +62,10 @@ function StatusBadge({ status }: { status: string }) {
     spam: { variant: 'purple', icon: <Mail className="w-3 h-3" />, label: 'Spam' },
     delivered: { variant: 'info', icon: <CheckCircle2 className="w-3 h-3" />, label: 'Delivered' },
   }
+  // Lookup the config for the current status. If it doesn't exist, fallback to a default grey 'secondary' badge
   const cfg = map[status] ?? { variant: 'secondary' as const, icon: null, label: status }
+  
+  // Return the Badge component with the appropriate variant and icon
   return (
     <Badge variant={cfg.variant} className="flex items-center gap-1 w-fit">
       {cfg.icon}
@@ -64,30 +74,48 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-type SortField = keyof Contact | null
-type SortDir = 'asc' | 'desc'
+// Define specific types for sorting fields to ensure type safety
+type SortField = keyof Contact | null // Can sort by any key of Contact, or null for no sorting
+type SortDir = 'asc' | 'desc' // Direction is either ascending or descending
 
+/**
+ * Main EmailTable component exported as default.
+ * Handles displaying, searching, filtering, sorting, paginating, and exporting contact data.
+ */
 export default function EmailTable({ contacts, loading }: EmailTableProps) {
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [companyFilter, setCompanyFilter] = useState('all')
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
-  const [sortField, setSortField] = useState<SortField>('created_at')
-  const [sortDir, setSortDir] = useState<SortDir>('desc')
+  // --- STATE DEFINITIONS ---
+  const [search, setSearch] = useState('') // Stores the text typed in the global search bar
+  const [statusFilter, setStatusFilter] = useState('all') // Stores the selected status from the dropdown
+  const [companyFilter, setCompanyFilter] = useState('all') // Stores the selected company from the dropdown
+  const [startDate, setStartDate] = useState('') // Stores the selected start date filter
+  const [endDate, setEndDate] = useState('') // Stores the selected end date filter
+  const [page, setPage] = useState(1) // Stores the current pagination page (1-indexed)
+  const [pageSize, setPageSize] = useState(10) // Stores the number of items per page
+  const [sortField, setSortField] = useState<SortField>('created_at') // Stores the currently active column for sorting
+  const [sortDir, setSortDir] = useState<SortDir>('desc') // Stores the current sort direction
 
+  /**
+   * Memoized array of unique companies extracted from the contacts list.
+   * This prevents recalculating the unique list on every render unless 'contacts' changes.
+   */
   const companies = useMemo(() => {
+    // Extract company names, filter out null/undefined, put into a Set to ensure uniqueness, then convert back to an Array and sort alphabetically.
     const set = new Set(contacts.map((c) => c.company).filter(Boolean) as string[])
     return Array.from(set).sort()
   }, [contacts])
 
+  /**
+   * Memoized array of filtered and sorted contacts.
+   * This is the core logic engine of the table. It recalculates only when dependencies change.
+   */
   const filtered = useMemo(() => {
+    // Create a shallow copy of contacts so we don't mutate the original prop
     let data = [...contacts]
 
+    // 1. Apply Search Filter
     if (search) {
       const q = search.toLowerCase()
+      // Keep only contacts whose name, email, company, or phone include the search query
       data = data.filter(
         (c) =>
           c.name?.toLowerCase().includes(q) ||
@@ -97,63 +125,89 @@ export default function EmailTable({ contacts, loading }: EmailTableProps) {
       )
     }
 
+    // 2. Apply Dropdown Filters
     if (statusFilter !== 'all') data = data.filter((c) => c.status === statusFilter)
     if (companyFilter !== 'all') data = data.filter((c) => c.company === companyFilter)
 
+    // 3. Apply Date Range Filters
     if (startDate) data = data.filter((c) => new Date(c.created_at) >= new Date(startDate))
     if (endDate) {
       const end = new Date(endDate)
-      end.setHours(23, 59, 59, 999)
+      end.setHours(23, 59, 59, 999) // Set time to end of day to include all events on that day
       data = data.filter((c) => new Date(c.created_at) <= end)
     }
 
+    // 4. Apply Sorting
     if (sortField) {
       data.sort((a, b) => {
-        const av = a[sortField] ?? ''
+        const av = a[sortField] ?? '' // fallback to empty string if null
         const bv = b[sortField] ?? ''
+        // Use localeCompare for alphabetical sorting, reversing the order if 'desc'
         return sortDir === 'asc' ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av))
       })
     }
 
-    return data
+    return data // Return the fully processed data set
   }, [contacts, search, statusFilter, companyFilter, startDate, endDate, sortField, sortDir])
 
+  // --- PAGINATION CALCS ---
+  // Total pages = total filtered items divided by items per page (rounded up)
   const totalPages = Math.ceil(filtered.length / pageSize)
+  // Slice the filtered array to get only the items for the current page
   const paginated = filtered.slice((page - 1) * pageSize, page * pageSize)
 
+  /**
+   * Function to handle clicking on a column header to change sorting.
+   */
   const handleSort = (field: SortField) => {
+    // If clicking the same column, toggle direction. Otherwise, set new column and default to ascending.
     if (sortField === field) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
     else { setSortField(field); setSortDir('asc') }
   }
 
+  /**
+   * Helper component to render the correct sort arrow icon next to column headers.
+   */
   const SortIcon = ({ field }: { field: SortField }) => {
+    // If not the active sort column, show a neutral up/down arrow
     if (sortField !== field) return <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+    // If active, show an up or down arrow based on sortDir
     return sortDir === 'asc' ? <SortAsc className="w-3.5 h-3.5 text-indigo-500" /> : <SortDesc className="w-3.5 h-3.5 text-indigo-500" />
   }
 
+  /**
+   * Export the currently filtered data to a CSV file.
+   */
   const exportCSV = () => {
-    const ws = XLSX.utils.json_to_sheet(filtered)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Contacts')
-    XLSX.writeFile(wb, 'contacts-export.csv', { bookType: 'csv' })
+    const ws = XLSX.utils.json_to_sheet(filtered) // convert json to sheet
+    const wb = XLSX.utils.book_new() // create new workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'Contacts') // append sheet
+    XLSX.writeFile(wb, 'contacts-export.csv', { bookType: 'csv' }) // trigger download
   }
 
+  /**
+   * Export the currently filtered data to an Excel (.xlsx) file.
+   */
   const exportExcel = () => {
     const ws = XLSX.utils.json_to_sheet(filtered)
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Contacts')
-    XLSX.writeFile(wb, 'contacts-export.xlsx')
+    XLSX.writeFile(wb, 'contacts-export.xlsx') // trigger download
   }
 
+  /**
+   * Reset all filters back to their default states.
+   */
   const resetFilters = () => {
     setSearch('')
     setStatusFilter('all')
     setCompanyFilter('all')
     setStartDate('')
     setEndDate('')
-    setPage(1)
+    setPage(1) // Reset back to first page
   }
 
+  // Define the table columns array. This makes the UI rendering loop much cleaner.
   const columns = [
     { key: 'name', label: 'Name', icon: <User className="w-3.5 h-3.5" /> },
     { key: 'email', label: 'Email', icon: <Mail className="w-3.5 h-3.5" /> },
@@ -163,6 +217,7 @@ export default function EmailTable({ contacts, loading }: EmailTableProps) {
     { key: 'status', label: 'Status', icon: null },
     { key: 'created_at', label: 'Sent At', icon: <Calendar className="w-3.5 h-3.5" /> },
   ] as const
+
 
   return (
     <div className="space-y-4">

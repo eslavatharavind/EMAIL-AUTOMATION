@@ -113,5 +113,22 @@ async function handler(request: Request) {
  * In production, we wrap the handler with `verifySignatureAppRouter`. This middleware ensures that 
  * the request is cryptographically signed by Upstash QStash, preventing unauthorized users from triggering your emails.
  */
-export const POST = process.env.NODE_ENV === 'development' ? handler : verifySignatureAppRouter(handler);
-export const GET = process.env.NODE_ENV === 'development' ? handler : verifySignatureAppRouter(handler);
+export async function POST(request: Request, ...args: any[]) {
+  // In development, bypass signature verification so we can test manually
+  if (process.env.NODE_ENV === 'development') {
+    return handler(request);
+  }
+  
+  // In production, instantiate the QStash wrapper dynamically to prevent build-time evaluation errors
+  const wrapped = verifySignatureAppRouter(handler);
+  return wrapped(request, ...args);
+}
+
+export async function GET(request: Request, ...args: any[]) {
+  if (process.env.NODE_ENV === 'development') {
+    return handler(request);
+  }
+  
+  const wrapped = verifySignatureAppRouter(handler);
+  return wrapped(request, ...args);
+}
