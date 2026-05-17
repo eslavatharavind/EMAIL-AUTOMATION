@@ -2,12 +2,14 @@
 
 import { login, signup } from './actions'
 import { useEffect, useState } from 'react'
-import { Mail, Lock, User, Send } from 'lucide-react'
+import { Mail, Lock, User, Send, Eye, EyeOff } from 'lucide-react'
 
 export default function LoginPage() {
   const [isRightPanelActive, setIsRightPanelActive] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const [showSignInPassword, setShowSignInPassword] = useState(false)
+  const [showSignUpPassword, setShowSignUpPassword] = useState(false)
 
   useEffect(() => {
     const p = new URLSearchParams(window.location.search)
@@ -43,14 +45,11 @@ export default function LoginPage() {
       </div>
 
       {/* ─── Main Form Container ─── */}
-      {/* Changed bg-white to bg-[#0f172a] (slate-900) */}
-      <div className={`relative bg-[#0f172a] rounded-3xl shadow-[0_0_40px_rgba(0,0,0,0.5)] border border-slate-800 w-full max-w-[850px] min-h-[550px] overflow-hidden transition-all duration-700 ease-in-out login-container ${isRightPanelActive ? 'right-panel-active' : ''} z-10`}>
+      <div className={`relative bg-[#0f172a] rounded-3xl md:rounded-[3rem] shadow-[0_0_40px_rgba(0,0,0,0.5)] border border-slate-800 w-full max-w-[850px] min-h-[600px] overflow-hidden transition-all duration-700 ease-in-out login-container ${isRightPanelActive ? 'right-panel-active' : ''} z-10`}>
 
         {/* Sign Up Container */}
-        {/* Changed bg-white to bg-[#0f172a] */}
-        <div className="absolute top-0 left-0 h-full w-1/2 opacity-0 z-10 transition-all duration-700 ease-in-out sign-up-container bg-[#0f172a] px-10 py-12 flex flex-col justify-center items-center text-center">
+        <div className="absolute top-0 left-0 h-full w-full md:w-1/2 opacity-0 z-10 transition-all duration-700 ease-in-out sign-up-container bg-[#0f172a] px-6 md:px-10 py-12 flex flex-col justify-center items-center text-center">
           <form action={signup} className="w-full max-w-[320px] flex flex-col items-center">
-            {/* Changed text colors for dark mode */}
             <h1 className="text-3xl font-bold text-white mb-2">Create Account</h1>
             <p className="text-sm text-slate-400 mb-8">Enter your details to get started</p>
 
@@ -65,21 +64,28 @@ export default function LoginPage() {
               </div>
               <div className="relative">
                 <Lock className="w-5 h-5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input type="password" name="password" placeholder="Password" minLength={6} required className="w-full bg-slate-800/50 border border-slate-700 text-white text-sm rounded-lg pl-10 pr-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500 transition-all placeholder:text-slate-500" />
+                <input type={showSignUpPassword ? "text" : "password"} name="password" placeholder="Password" minLength={6} required className="w-full bg-slate-800/50 border border-slate-700 text-white text-sm rounded-lg pl-10 pr-10 py-3 outline-none focus:ring-2 focus:ring-indigo-500 transition-all placeholder:text-slate-500" />
+                <button type="button" onClick={() => setShowSignUpPassword(!showSignUpPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
+                  {showSignUpPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
             </div>
 
-            <button type="submit" className="bg-[#5b4ebf] text-white text-sm font-semibold tracking-wider uppercase px-12 py-3 rounded-full hover:bg-[#4a3ea3] transition-colors shadow-lg shadow-[#5b4ebf]/30">
+            <button type="submit" className="bg-[#5b4ebf] text-white text-sm font-semibold tracking-wider uppercase w-full md:w-auto px-12 py-3 rounded-xl md:rounded-full hover:bg-[#4a3ea3] transition-colors shadow-lg shadow-[#5b4ebf]/30">
               Sign Up
             </button>
+
+            {/* Mobile switch toggle */}
+            <div className="mt-6 md:hidden">
+              <p className="text-slate-400 text-sm">Already have an account?</p>
+              <button type="button" onClick={() => setIsRightPanelActive(false)} className="text-white hover:underline text-sm font-semibold mt-1">Sign In</button>
+            </div>
           </form>
         </div>
 
         {/* Sign In Container */}
-        {/* Changed bg-white to bg-[#0f172a] */}
-        <div className="absolute top-0 left-0 h-full w-1/2 z-20 transition-all duration-700 ease-in-out sign-in-container bg-[#0f172a] px-10 py-12 flex flex-col justify-center items-center text-center">
+        <div className="absolute top-0 left-0 h-full w-full md:w-1/2 z-20 transition-all duration-700 ease-in-out sign-in-container bg-[#0f172a] px-6 md:px-10 py-12 flex flex-col justify-center items-center text-center">
           <form action={login} className="w-full max-w-[320px] flex flex-col items-center">
-            {/* Changed text colors for dark mode */}
             <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">Sign In</h1>
             <p className="text-sm text-slate-400 mb-8">Welcome back to EMAIL AUTOMATION</p>
 
@@ -102,20 +108,29 @@ export default function LoginPage() {
               </div>
               <div className="relative">
                 <Lock className="w-5 h-5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input type="password" name="password" placeholder="Password" required className="w-full bg-slate-800/50 border border-slate-700 text-white text-sm rounded-lg pl-10 pr-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500 transition-all placeholder:text-slate-500" />
+                <input type={showSignInPassword ? "text" : "password"} name="password" placeholder="Password" required className="w-full bg-slate-800/50 border border-slate-700 text-white text-sm rounded-lg pl-10 pr-10 py-3 outline-none focus:ring-2 focus:ring-indigo-500 transition-all placeholder:text-slate-500" />
+                <button type="button" onClick={() => setShowSignInPassword(!showSignInPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
+                  {showSignInPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
             </div>
 
             <a href="#" className="text-sm text-slate-400 hover:text-white mb-8 border-b border-transparent hover:border-white transition-colors">Forgot your password?</a>
 
-            <button type="submit" className="bg-[#5b4ebf] text-white text-sm font-semibold tracking-wider uppercase px-12 py-3 rounded-full hover:bg-[#4a3ea3] transition-colors shadow-lg shadow-[#5b4ebf]/30">
+            <button type="submit" className="bg-[#5b4ebf] text-white text-sm font-semibold tracking-wider uppercase w-full md:w-auto px-12 py-3 rounded-xl md:rounded-full hover:bg-[#4a3ea3] transition-colors shadow-lg shadow-[#5b4ebf]/30">
               Sign In
             </button>
+
+            {/* Mobile switch toggle */}
+            <div className="mt-6 md:hidden">
+              <p className="text-slate-400 text-sm">Don't have an account?</p>
+              <button type="button" onClick={() => setIsRightPanelActive(true)} className="text-white hover:underline text-sm font-semibold mt-1">Sign Up</button>
+            </div>
           </form>
         </div>
 
-        {/* Overlay Container */}
-        <div className="absolute top-0 left-1/2 w-1/2 h-full overflow-hidden transition-transform duration-700 ease-in-out z-[100] overlay-container">
+        {/* Overlay Container (Hidden on mobile) */}
+        <div className="hidden md:block absolute top-0 left-1/2 w-1/2 h-full overflow-hidden transition-transform duration-700 ease-in-out z-[100] overlay-container">
           <div className="bg-gradient-to-br from-[#5b4ebf] to-[#8a63e5] relative -left-full h-full w-[200%] transform transition-transform duration-700 ease-in-out overlay text-white shadow-[-10px_0_30px_rgba(0,0,0,0.5)]">
 
             {/* Overlay Left (Sign In Panel shown when Sign Up is active) */}
@@ -173,43 +188,53 @@ export default function LoginPage() {
 
 
         /* --- Sliding Panels --- */
-        /* Sign In container moves out of the way */
-        .login-container.right-panel-active .sign-in-container {
-          transform: translateX(100%);
+        
+        /* Desktop specific animations */
+        @media (min-width: 768px) {
+          .login-container.right-panel-active .sign-in-container {
+            transform: translateX(100%);
+          }
+          .login-container.right-panel-active .sign-up-container {
+            transform: translateX(100%);
+            opacity: 1;
+            z-index: 50;
+            animation: show 0.7s;
+          }
+          .login-container.right-panel-active .overlay-container {
+            transform: translateX(-100%);
+          }
+          .login-container.right-panel-active .overlay {
+            transform: translateX(50%);
+          }
+          .overlay-left {
+            transform: translateX(-20%);
+          }
+          .login-container.right-panel-active .overlay-left {
+            transform: translateX(0);
+          }
+          .overlay-right {
+            transform: translateX(0);
+          }
+          .login-container.right-panel-active .overlay-right {
+            transform: translateX(20%);
+          }
         }
-
-        /* Sign Up container moves into view and becomes active */
-        .login-container.right-panel-active .sign-up-container {
-          transform: translateX(100%);
-          opacity: 1;
-          z-index: 50;
-          animation: show 0.7s;
-        }
-
-        /* The wrapper for the overlay moves left */
-        .login-container.right-panel-active .overlay-container {
-          transform: translateX(-100%);
-        }
-
-        /* The overlay background gradient moves right to counter the wrapper */
-        .login-container.right-panel-active .overlay {
-          transform: translateX(50%);
-        }
-
-        /* Overlay Left text panel moves into view */
-        .overlay-left {
-          transform: translateX(-20%);
-        }
-        .login-container.right-panel-active .overlay-left {
-          transform: translateX(0);
-        }
-
-        /* Overlay Right text panel moves out of view */
-        .overlay-right {
-          transform: translateX(0);
-        }
-        .login-container.right-panel-active .overlay-right {
-          transform: translateX(20%);
+        
+        /* Mobile specific animations */
+        @media (max-width: 767px) {
+          .login-container.right-panel-active .sign-in-container {
+            transform: translateX(-100%);
+            opacity: 0;
+            z-index: 10;
+          }
+          .login-container.right-panel-active .sign-up-container {
+            transform: translateX(0);
+            opacity: 1;
+            z-index: 50;
+          }
+          .sign-in-container, .sign-up-container {
+            transition: all 0.5s ease-in-out;
+          }
         }
 
         @keyframes show {
