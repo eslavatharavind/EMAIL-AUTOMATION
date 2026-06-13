@@ -1,13 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
-import ContactsClient from './client-page'
+import TemplatesClient from './client-page'
 
-export default async function ContactsPage() {
+export default async function TemplatesPage() {
   const supabase = await createClient()
-
-  const { data: contacts } = await supabase
-    .from('contacts')
-    .select('*')
-    .order('created_at', { ascending: false })
 
   const { data: templates } = await supabase
     .from('email_templates')
@@ -18,13 +13,13 @@ export default async function ContactsPage() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Contacts</h1>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Email Templates</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            Manage and send emails to your contacts.
+            Manage your reusable email templates.
           </p>
         </div>
       </div>
-      <ContactsClient initialContacts={contacts || []} templates={templates || []} />
+      <TemplatesClient initialTemplates={templates || []} />
     </div>
   )
 }

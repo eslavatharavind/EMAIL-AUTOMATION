@@ -25,6 +25,7 @@ const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, exact: true },
   { href: '/dashboard/contacts', label: 'Contacts', icon: Users },
   { href: '/dashboard/campaigns', label: 'Campaigns', icon: Megaphone },
+  { href: '/dashboard/templates', label: 'Templates', icon: FileText },
   { href: '/dashboard/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/dashboard/activity', label: 'Activity', icon: Activity },
   { href: '/dashboard/reports', label: 'Reports', icon: FileText },
@@ -48,7 +49,7 @@ export default function Sidebar({ userEmail }: SidebarProps) {
     <motion.aside
       animate={{ width: collapsed ? 72 : 240 }}
       transition={{ duration: 0.3, ease: 'easeInOut' }}
-      className="hidden md:flex flex-col bg-slate-900 text-white relative overflow-hidden shrink-0"
+      className="hidden md:flex flex-col bg-slate-900 text-white relative shrink-0"
     >
       {/* Logo */}
       <div className="flex items-center h-16 px-4 border-b border-slate-700/50">
@@ -93,20 +94,21 @@ export default function Sidebar({ userEmail }: SidebarProps) {
               href={item.href}
               title={item.label}
               className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group relative',
+                'flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group relative',
                 active
                   ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-white',
+                collapsed ? 'justify-center px-0' : ''
               )}
             >
-              <item.icon className={cn('w-5 h-5 shrink-0', active ? 'text-white' : 'text-slate-400 group-hover:text-white')} />
+              <item.icon className={cn('w-5 h-5 shrink-0 relative z-10', active ? 'text-white' : 'text-slate-400 group-hover:text-white')} />
               <AnimatePresence>
                 {!collapsed && (
                   <motion.span
                     initial={{ opacity: 0, width: 0 }}
                     animate={{ opacity: 1, width: 'auto' }}
                     exit={{ opacity: 0, width: 0 }}
-                    className="whitespace-nowrap overflow-hidden"
+                    className="whitespace-nowrap overflow-hidden relative z-10"
                   >
                     {item.label}
                   </motion.span>

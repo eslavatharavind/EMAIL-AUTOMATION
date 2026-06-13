@@ -1,35 +1,80 @@
-import { Megaphone, Plus } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { createClient } from '@/lib/supabase/server'
+import CampaignsClientPage from './client-page'
+import { redirect } from 'next/navigation'
 
-export default function CampaignsPage() {
+export const dynamic = 'force-dynamic'
+
+export default async function CampaignsPage() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/login')
+  }
+
+  // Fetch campaigns with their templates — gracefully handle if table doesn't exist yet
+  const { data: campaigns, error: campaignsError } = await supabase
+    .from('campaigns')
+    .select(`
+      *,
+      email_templates ( id, template_name )
+    `)
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+
+  // If the table doesn't exist, show the migration banner
+  const tablesMissing = !!campaignsError && (
+    campaignsError.message.includes('does not exist') ||
+    campaignsError.message.includes('schema cache') ||
+    campaignsError.code === '42P01'
+  )
+
+  // Fetch templates for the "Create Campaign" dropdown
+  const { data: templates } = await supabase
+    .from('email_templates')
+    .select('id, template_name')
+    .eq('user_id', user.id)
+
+  if (tablesMissing) {
+    return (
+      <CampaignsClientPage
+        campaigns={[]}
+        templates={templates || []}
+        migrationRequired={true}
+      />
+    )
+  }
+
+  // Fetch basic stats for each campaign
+  const campaignsWithStats = await Promise.all((campaigns || []).map(async (camp) => {
+    const { count: total } = await supabase
+      .from('campaign_contacts')
+      .select('*', { count: 'exact', head: true })
+      .eq('campaign_id', camp.id)
+    const { count: sent } = await supabase
+      .from('campaign_contacts')
+      .select('*', { count: 'exact', head: true })
+      .eq('campaign_id', camp.id)
+      .eq('status', 'sent')
+    const { count: failed } = await supabase
+      .from('campaign_contacts')
+      .select('*', { count: 'exact', head: true })
+      .eq('campaign_id', camp.id)
+      .eq('status', 'failed')
+
+    return {
+      ...camp,
+      total_contacts: total || 0,
+      sent_count: sent || 0,
+      failed_count: failed || 0,
+    }
+  }))
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Campaigns</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            Create and manage your email campaigns.
-          </p>
-        </div>
-        <Button variant="primary">
-          <Plus className="w-4 h-4 mr-1.5" />
-          New Campaign
-        </Button>
-      </div>
-
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 py-20 text-center">
-        <div className="w-14 h-14 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center mx-auto mb-4">
-          <Megaphone className="w-7 h-7 text-slate-400" />
-        </div>
-        <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">No campaigns yet</h3>
-        <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xs mx-auto mb-6">
-          Create your first email campaign and start reaching your audience.
-        </p>
-        <Button variant="primary">
-          <Plus className="w-4 h-4 mr-1.5" />
-          Create Campaign
-        </Button>
-      </div>
-    </div>
+    <CampaignsClientPage
+      campaigns={campaignsWithStats || []}
+      templates={templates || []}
+      migrationRequired={false}
+    />
   )
 }
