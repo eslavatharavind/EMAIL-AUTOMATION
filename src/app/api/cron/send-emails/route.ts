@@ -5,6 +5,7 @@ import { verifySignatureAppRouter } from "@upstash/qstash/nextjs"
 
 async function handler(request: Request) {
   try {
+    console.log("[CRON] send-emails cron process started");
     console.log("QStash cron request received at /api/cron/send-emails", {
       method: request.method,
       url: request.url,
@@ -20,7 +21,7 @@ async function handler(request: Request) {
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
-      console.error("Missing Supabase environment variables");
+      console.error("[CRON] Missing Supabase environment variables");
       return NextResponse.json({ error: "Configuration error" }, { status: 500 });
     }
 
@@ -31,7 +32,7 @@ async function handler(request: Request) {
     const zohoHost = process.env.ZOHO_SMTP_HOST || 'smtp.zoho.in';
 
     if (!zohoEmail || !zohoPassword) {
-      console.error("Missing Zoho SMTP environment variables");
+      console.error("[CRON] Missing Zoho SMTP environment variables");
       return NextResponse.json({ error: "Configuration error" }, { status: 500 });
     }
 
@@ -44,6 +45,8 @@ async function handler(request: Request) {
         pass: zohoPassword,
       },
     });
+
+    console.log("[CRON] Nodemailer Zoho SMTP transport successfully initialized");
 
     // 1. Fetch up to 50 campaign_contacts that are pending or failed (with attempts < 3), 
     // where the parent campaign is currently 'running'.
@@ -59,14 +62,20 @@ async function handler(request: Request) {
       .lt('attempts', 3)
       .limit(50)
 
-    if (fetchError) throw fetchError
+    if (fetchError) {
+      console.error("[CRON] Error fetching campaign contacts:", fetchError);
+      throw fetchError;
+    }
+
+    console.log(`[CRON] Number of pending campaign contacts found: ${campaignContacts?.length || 0}`);
 
     // 2. Early exit if the queue is empty
     if (!campaignContacts || campaignContacts.length === 0) {
+      console.log("[CRON] No pending campaign contacts found. Checking running campaigns for auto-completion...");
       // Check if there are running campaigns that have no more pending/failed contacts
       const { data: runningCampaigns } = await supabaseAdmin
         .from('campaigns')
-        .select('id, user_id')
+        .select('id, name, user_id')
         .eq('status', 'running')
       
       if (runningCampaigns && runningCampaigns.length > 0) {
@@ -79,6 +88,7 @@ async function handler(request: Request) {
             .lt('attempts', 3)
           
           if (count === 0) {
+            console.log(`[CRON] Campaign "${camp.name}" (${camp.id}) has no pending contacts. Auto-marking as completed.`);
             await supabaseAdmin.from('campaigns').update({ status: 'completed' }).eq('id', camp.id)
             await supabaseAdmin.from('activity_logs').insert({
               action: 'campaign_completed',
@@ -114,12 +124,21 @@ async function handler(request: Request) {
     for (const item of (campaignContacts as any[])) {
       const contact = Array.isArray(item.contacts) ? item.contacts[0] : item.contacts
       const campaign = Array.isArray(item.campaigns) ? item.campaigns[0] : item.campaigns
-      if (!contact || !campaign) continue
+      if (!contact || !campaign) {
+        console.warn("[CRON] Skipping record: contact or campaign missing", item);
+        continue;
+      }
       
       const templateRaw = campaign.email_templates
       const template = Array.isArray(templateRaw) ? templateRaw[0] : templateRaw
       
-      if (!contact || !campaign || !template) continue
+      if (!template) {
+        console.warn(`[CRON] Skipping record: template missing for campaign "${campaign.name}"`, item);
+        continue;
+      }
+
+      console.log(`[CRON] Processing email for contact: ${contact.email} (Name: ${contact.name})`);
+      console.log(`[CRON] Using Template: "${template.template_name}" (Subject: "${template.subject}")`);
 
       const finalSubject = replaceVariables(template.subject, contact)
       const finalHtml = replaceVariables(template.body, contact)
@@ -132,6 +151,7 @@ async function handler(request: Request) {
       const plainTextFallback = finalHtml.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
 
       try {
+        console.log(`[CRON] Dispatching email to ${contact.email}...`);
         await transporter.sendMail({
           from: fromName,
           to: contact.email,
@@ -139,16 +159,19 @@ async function handler(request: Request) {
           html: finalHtml,
           text: plainTextFallback
         });
+        console.log(`[CRON] Dispatch successful to ${contact.email}`);
         
         // Artificial delay of 500ms between emails within the batch to prevent rate limiting
         await new Promise(resolve => setTimeout(resolve, 500))
       } catch (error: any) {
         sendError = error; 
+        console.error(`[CRON] Dispatch failed to ${contact.email}:`, error.message);
       }
 
       const newStatus = sendError ? 'failed' : 'sent'
       const newAttempts = item.attempts + 1
       
+      console.log(`[CRON] Updating campaign_contacts record ${item.id} to status: ${newStatus}`);
       await supabaseAdmin
         .from('campaign_contacts')
         .update({ 

@@ -111,7 +111,10 @@ export async function POST(request: Request) {
       cc.status === 'pending' || (cc.status === 'failed' && cc.attempts < 3)
     )
 
-    for (const item of targetContacts) {
+    // Send the first 5 contacts synchronously in the trigger endpoint to give quick feedback
+    const batchToProcess = targetContacts.slice(0, 5)
+
+    for (const item of batchToProcess) {
       const contact = Array.isArray(item.contacts) ? item.contacts[0] : item.contacts
       if (!contact) continue
 
@@ -162,15 +165,21 @@ export async function POST(request: Request) {
       else failedCount++
     }
 
-    // Update campaign status to 'completed'
-    await supabase.from('campaigns').update({ status: 'completed' }).eq('id', campaignId)
-    await supabase.from('activity_logs').insert({
-      action: 'campaign_completed',
-      user_id: user.id,
-      details: `Campaign "${campaign.name}" completed`
-    })
+    const remainingPendingCount = targetContacts.length - batchToProcess.length
 
-    return NextResponse.json({ success: true, sent: sentCount, failed: failedCount })
+    if (remainingPendingCount === 0) {
+      // If we finished processing all contacts in this trigger call, set status to completed
+      await supabase.from('campaigns').update({ status: 'completed' }).eq('id', campaignId)
+      await supabase.from('activity_logs').insert({
+        action: 'campaign_completed',
+        user_id: user.id,
+        details: `Campaign "${campaign.name}" completed`
+      })
+    } else {
+      console.log(`[TRIGGER] Campaign "${campaign.name}" has ${remainingPendingCount} remaining contacts. Leaving in 'running' status for QStash cron.`);
+    }
+
+    return NextResponse.json({ success: true, sent: sentCount, failed: failedCount, remaining: remainingPendingCount })
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
