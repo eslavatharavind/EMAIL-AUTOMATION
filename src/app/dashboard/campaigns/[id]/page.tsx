@@ -4,7 +4,8 @@ import { redirect } from 'next/navigation'
 
 export const dynamic = 'force-dynamic'
 
-export default async function CampaignDetailsPage({ params }: { params: { id: string } }) {
+export default async function CampaignDetailsPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -14,7 +15,7 @@ export default async function CampaignDetailsPage({ params }: { params: { id: st
   const { data: campaign } = await supabase
     .from('campaigns')
     .select(`*, email_templates ( id, template_name, subject, body )`)
-    .eq('id', params.id)
+    .eq('id', id)
     .eq('user_id', user.id)
     .single()
 
@@ -27,7 +28,7 @@ export default async function CampaignDetailsPage({ params }: { params: { id: st
       id, contact_id, status, attempts, error_message, sent_at,
       contacts ( id, name, email, company )
     `)
-    .eq('campaign_id', params.id)
+    .eq('campaign_id', id)
 
   // Fetch all user contacts (to be able to add them)
   const { data: allContacts } = await supabase
@@ -38,7 +39,7 @@ export default async function CampaignDetailsPage({ params }: { params: { id: st
   // Fetch user templates
   const { data: templates } = await supabase
     .from('email_templates')
-    .select('id, template_name')
+    .select('id, template_name, is_draft')
     .eq('user_id', user.id)
 
   return (

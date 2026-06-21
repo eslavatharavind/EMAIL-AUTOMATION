@@ -101,6 +101,9 @@ CREATE POLICY "Users can delete their own campaign contacts" ON public.campaign_
       AND campaigns.user_id = auth.uid()
   )
 );
+
+-- Add is_draft column to email_templates safely if it doesn't exist
+ALTER TABLE public.email_templates ADD COLUMN IF NOT EXISTS is_draft BOOLEAN DEFAULT FALSE;
 `
 
 export async function POST() {

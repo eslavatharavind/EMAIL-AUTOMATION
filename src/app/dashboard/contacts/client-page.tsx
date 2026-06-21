@@ -43,7 +43,7 @@ export default function ContactsClient({ initialContacts, templates }: { initial
   const [isSendModalOpen, setIsSendModalOpen] = useState(false)
   const [sendingContact, setSendingContact] = useState<any>(null)
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
-  const [emailForm, setEmailForm] = useState({ subject: '', display_name: '', html: '' })
+  const [emailForm, setEmailForm] = useState({ toEmail: '', toName: '', subject: '', display_name: '', html: '' })
   const [attachments, setAttachments] = useState<File[]>([])
   const [isSendingEmail, setIsSendingEmail] = useState(false)
   const [isPreviewMode, setIsPreviewMode] = useState(false)
@@ -111,7 +111,28 @@ export default function ContactsClient({ initialContacts, templates }: { initial
   const openSendModal = (contact: any) => {
     setSendingContact(contact)
     setSelectedTemplateId('')
-    setEmailForm({ subject: '', display_name: '', html: '' })
+    setEmailForm({
+      toEmail: contact.email || '',
+      toName: contact.name || '',
+      subject: '',
+      display_name: '',
+      html: ''
+    })
+    setAttachments([])
+    setIsPreviewMode(false)
+    setIsSendModalOpen(true)
+  }
+
+  const openComposeModal = () => {
+    setSendingContact(null)
+    setSelectedTemplateId('')
+    setEmailForm({
+      toEmail: '',
+      toName: '',
+      subject: '',
+      display_name: '',
+      html: ''
+    })
     setAttachments([])
     setIsPreviewMode(false)
     setIsSendModalOpen(true)
@@ -122,11 +143,12 @@ export default function ContactsClient({ initialContacts, templates }: { initial
     setSelectedTemplateId(tempId)
     const template = templates.find(t => t.id === tempId)
     if (template) {
-      setEmailForm({
+      setEmailForm(prev => ({
+        ...prev,
         subject: template.subject,
         display_name: template.display_name || '',
         html: template.body
-      })
+      }))
     }
   }
 
@@ -142,7 +164,7 @@ export default function ContactsClient({ initialContacts, templates }: { initial
 
   const handleSendEmail = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!sendingContact) return
+    if (!emailForm.toEmail) return toast.error('Recipient email is required')
     setIsSendingEmail(true)
     
     try {
@@ -152,7 +174,13 @@ export default function ContactsClient({ initialContacts, templates }: { initial
         contentType: file.type
       })))
 
-      const res = await sendEmail(sendingContact.id, {
+      const contactId = (sendingContact && sendingContact.email === emailForm.toEmail)
+        ? sendingContact.id
+        : 'custom'
+
+      const res = await sendEmail(contactId, {
+        toEmail: emailForm.toEmail,
+        toName: emailForm.toName,
         subject: emailForm.subject,
         displayName: emailForm.display_name,
         html: emailForm.html,
@@ -161,7 +189,8 @@ export default function ContactsClient({ initialContacts, templates }: { initial
       
       if (res.success) {
         toast.success('Email sent successfully!')
-        setContacts(contacts.map(c => c.id === sendingContact.id ? { ...c, status: res.status } : c))
+        const { data } = await supabase.from('contacts').select('*').order('created_at', { ascending: false })
+        if (data) setContacts(data)
         setIsSendModalOpen(false)
       } else {
         toast.error(res.details || 'Failed to send email')
@@ -288,6 +317,11 @@ export default function ContactsClient({ initialContacts, templates }: { initial
           Manual Contact
         </button>
 
+        <button onClick={() => openComposeModal()} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors">
+          <Send className="w-4 h-4" />
+          Compose Email
+        </button>
+
         <button 
           onClick={handleProcessQueue} 
           disabled={isProcessingQueue}
@@ -338,8 +372,7 @@ export default function ContactsClient({ initialContacts, templates }: { initial
                     <div className="flex items-center justify-end gap-3">
                       <button 
                         onClick={() => openSendModal(contact)}
-                        disabled={contact.status === 'sent'}
-                        className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 disabled:opacity-50"
+                        className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300"
                         title="Send Email"
                       >
                         <Send className="w-4 h-4" />
@@ -413,12 +446,12 @@ export default function ContactsClient({ initialContacts, templates }: { initial
       )}
 
       {/* Send Email Modal */}
-      {isSendModalOpen && sendingContact && (
+      {isSendModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="flex justify-between items-center p-4 border-b dark:border-gray-700">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Send Email to {sendingContact.email}
+                {sendingContact ? `Send Email to ${sendingContact.email}` : 'Compose New Email'}
               </h2>
               <button onClick={() => setIsSendModalOpen(false)} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
                 <X className="w-5 h-5" />
@@ -428,6 +461,31 @@ export default function ContactsClient({ initialContacts, templates }: { initial
             <div className="p-4 overflow-y-auto flex-1">
               {!isPreviewMode ? (
                 <form id="send-email-form" onSubmit={handleSendEmail} className="space-y-4">
+                  {/* Recipient Details */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">To Email <span className="text-red-500">*</span></label>
+                      <input 
+                        required 
+                        type="email" 
+                        value={emailForm.toEmail} 
+                        onChange={e => setEmailForm({...emailForm, toEmail: e.target.value})} 
+                        className="w-full px-3 py-2 border rounded-md dark:bg-gray-900 dark:border-gray-700 dark:text-white"
+                        placeholder="recipient@example.com"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Recipient Name (Optional)</label>
+                      <input 
+                        type="text" 
+                        value={emailForm.toName} 
+                        onChange={e => setEmailForm({...emailForm, toName: e.target.value})} 
+                        className="w-full px-3 py-2 border rounded-md dark:bg-gray-900 dark:border-gray-700 dark:text-white"
+                        placeholder="e.g. John Doe"
+                      />
+                    </div>
+                  </div>
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Select Template (Optional)</label>
                     <select value={selectedTemplateId} onChange={handleTemplateChange} className="w-full px-3 py-2 border rounded-md dark:bg-gray-900 dark:border-gray-700 dark:text-white">
@@ -482,26 +540,37 @@ export default function ContactsClient({ initialContacts, templates }: { initial
                   </div>
                 </form>
               ) : (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-[100px_1fr] gap-2 text-sm">
-                    <div className="text-gray-500 font-medium">To:</div>
-                    <div className="text-gray-900 dark:text-white">{sendingContact.name} &lt;{sendingContact.email}&gt;</div>
-                    
-                    <div className="text-gray-500 font-medium">From:</div>
-                    <div className="text-gray-900 dark:text-white">{emailForm.display_name ? `"${emailForm.display_name}" <sender@domain.com>` : 'Default Sender'}</div>
-                    
-                    <div className="text-gray-500 font-medium">Subject:</div>
-                    <div className="text-gray-900 dark:text-white font-medium">{replaceVariables(emailForm.subject, sendingContact)}</div>
-                  </div>
-                  {attachments.length > 0 && (
-                    <div className="flex gap-2 items-center text-sm text-gray-500">
-                      <Paperclip className="w-4 h-4" /> {attachments.length} attachment(s)
+                (() => {
+                  const dummyContact = sendingContact || {
+                    name: emailForm.toName || emailForm.toEmail.split('@')[0],
+                    email: emailForm.toEmail,
+                    company: '',
+                    phone_number: '',
+                    source: 'Direct Compose'
+                  }
+                  return (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-[100px_1fr] gap-2 text-sm">
+                        <div className="text-gray-500 font-medium">To:</div>
+                        <div className="text-gray-900 dark:text-white">{dummyContact.name} &lt;{dummyContact.email}&gt;</div>
+                        
+                        <div className="text-gray-500 font-medium">From:</div>
+                        <div className="text-gray-900 dark:text-white">{emailForm.display_name ? `"${emailForm.display_name}" <sender@domain.com>` : 'Default Sender'}</div>
+                        
+                        <div className="text-gray-500 font-medium">Subject:</div>
+                        <div className="text-gray-900 dark:text-white font-medium">{replaceVariables(emailForm.subject, dummyContact)}</div>
+                      </div>
+                      {attachments.length > 0 && (
+                        <div className="flex gap-2 items-center text-sm text-gray-500">
+                          <Paperclip className="w-4 h-4" /> {attachments.length} attachment(s)
+                        </div>
+                      )}
+                      <div className="border-t dark:border-gray-700 pt-4 mt-4">
+                        <div className="prose dark:prose-invert max-w-none text-sm whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: replaceVariables(emailForm.html, dummyContact) || '<p>Hi ' + dummyContact.name + ', ... (Default content)</p>' }} />
+                      </div>
                     </div>
-                  )}
-                  <div className="border-t dark:border-gray-700 pt-4 mt-4">
-                    <div className="prose dark:prose-invert max-w-none text-sm whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: replaceVariables(emailForm.html, sendingContact) || '<p>Hi ' + sendingContact.name + ', ... (Default content)</p>' }} />
-                  </div>
-                </div>
+                  )
+                })()
               )}
             </div>
 

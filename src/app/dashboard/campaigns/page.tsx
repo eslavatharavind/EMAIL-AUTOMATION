@@ -32,7 +32,7 @@ export default async function CampaignsPage() {
   // Fetch templates for the "Create Campaign" dropdown
   const { data: templates } = await supabase
     .from('email_templates')
-    .select('id, template_name')
+    .select('id, template_name, is_draft')
     .eq('user_id', user.id)
 
   if (tablesMissing) {

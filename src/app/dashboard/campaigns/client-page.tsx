@@ -203,17 +203,23 @@ export default function CampaignsClientPage({
 
   const handleUpdateStatus = async (id: string, status: string) => {
     try {
-      const res = await updateCampaign(id, { status })
-      if (!res.success) throw new Error(res.error ?? 'Unknown error')
-
       if (status === 'running') {
         toast.loading('Starting campaign...', { id: 'trigger' })
-        const triggerRes = await fetch('/api/campaigns/trigger', { method: 'POST' })
+        const triggerRes = await fetch('/api/campaigns/trigger', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ campaignId: id })
+        })
         const triggerData = await triggerRes.json()
         toast.dismiss('trigger')
-        toast.success(`Campaign started! Sent: ${triggerData.sent ?? 0}, Failed: ${triggerData.failed ?? 0}`)
+        if (!triggerRes.ok || triggerData.error) {
+          throw new Error(triggerData.error || 'Failed to start campaign')
+        }
+        toast.success(`Campaign completed successfully! Sent: ${triggerData.sent ?? 0}, Failed: ${triggerData.failed ?? 0}`)
       } else {
-        toast.success(`Campaign ${status}`)
+        const res = await updateCampaign(id, { status })
+        if (!res.success) throw new Error(res.error ?? 'Unknown error')
+        toast.success(`Campaign paused successfully`)
       }
 
       window.location.reload()
@@ -427,7 +433,7 @@ export default function CampaignsClientPage({
                   className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 >
                   <option value="">-- Select a Template --</option>
-                  {templates.map(t => (
+                  {templates.filter(t => !t.is_draft).map(t => (
                     <option key={t.id} value={t.id}>{t.template_name}</option>
                   ))}
                 </select>

@@ -14,8 +14,10 @@ const transporter = nodemailer.createTransport({
 })
 
 export async function sendEmail(
-  contactId: string, 
+  contactId: string | 'custom', 
   options?: {
+    toEmail?: string,
+    toName?: string,
     subject?: string,
     displayName?: string,
     html?: string,
@@ -28,15 +30,50 @@ export async function sendEmail(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
-  // 2. Fetch the contact
-  const { data: contact, error: fetchError } = await supabase
-    .from('contacts')
-    .select('*')
-    .eq('id', contactId)
-    .eq('user_id', user.id)
-    .single()
+  let contact: any = null
 
-  if (fetchError || !contact) throw new Error('Contact not found')
+  if (contactId !== 'custom') {
+    // 2. Fetch the contact by ID
+    const { data, error: fetchError } = await supabase
+      .from('contacts')
+      .select('*')
+      .eq('id', contactId)
+      .eq('user_id', user.id)
+      .single()
+    if (fetchError || !data) throw new Error('Contact not found')
+    contact = data
+  } else {
+    // We are sending to a custom email address
+    if (!options?.toEmail) throw new Error('Recipient email is required for custom sending')
+    
+    // Check if the contact already exists
+    const { data: existingContact } = await supabase
+      .from('contacts')
+      .select('*')
+      .eq('email', options.toEmail)
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (existingContact) {
+      contact = existingContact
+    } else {
+      // Create the contact dynamically so we can track status!
+      const { data: newContact, error: createErr } = await supabase
+        .from('contacts')
+        .insert({
+          name: options.toName || options.toEmail.split('@')[0],
+          email: options.toEmail,
+          user_id: user.id,
+          status: 'pending',
+          source: 'Direct Compose'
+        })
+        .select()
+        .single()
+      
+      if (createErr || !newContact) throw new Error('Failed to create dynamic contact: ' + (createErr?.message || ''))
+      contact = newContact
+    }
+  }
 
   // 3. Process Template Variables
   const replaceVariables = (text: string) => {
@@ -60,6 +97,8 @@ export async function sendEmail(
     ? `"${options.displayName}" <${process.env.ZOHO_EMAIL}>` 
     : process.env.ZOHO_EMAIL
 
+  const plainTextFallback = finalHtml.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
+
   // 4. Send via Nodemailer
   let status = 'sent'
   let details = 'Email sent manually'
@@ -69,6 +108,7 @@ export async function sendEmail(
       to: contact.email,
       subject: finalSubject,
       html: finalHtml,
+      text: plainTextFallback,
       attachments: options?.attachments?.length ? options.attachments.map(att => ({
         filename: att.filename,
         content: Buffer.from(att.content, 'base64'),
@@ -87,7 +127,7 @@ export async function sendEmail(
       status,
       sent_at: status === 'sent' ? new Date().toISOString() : null
     })
-    .eq('id', contactId)
+    .eq('id', contact.id)
 
   // 6. Create activity log
   await supabase.from('activity_logs').insert({

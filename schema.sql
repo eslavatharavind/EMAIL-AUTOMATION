@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS public.email_templates (
   display_name TEXT,
   body TEXT NOT NULL,
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  is_draft BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

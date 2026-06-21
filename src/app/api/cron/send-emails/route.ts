@@ -118,12 +118,15 @@ async function handler(request: Request) {
 
       let sendError = null;
       
+      const plainTextFallback = finalHtml.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
+
       try {
         await transporter.sendMail({
           from: fromName,
           to: contact.email,
           subject: finalSubject,
-          html: finalHtml
+          html: finalHtml,
+          text: plainTextFallback
         });
         
         // Artificial delay of 500ms between emails within the batch to prevent rate limiting

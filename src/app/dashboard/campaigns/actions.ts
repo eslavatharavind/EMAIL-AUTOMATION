@@ -97,15 +97,34 @@ export async function addContactsToCampaign(campaignId: string, contactIds: stri
     return { success: false as const, error: 'No contacts selected' }
   }
 
-  const inserts = idsToAdd.map(id => ({
+  // 1. Fetch existing contacts in the campaign to avoid duplicate inserts
+  const { data: existing, error: fetchErr } = await supabase
+    .from('campaign_contacts')
+    .select('contact_id')
+    .eq('campaign_id', campaignId)
+
+  if (fetchErr) return { success: false as const, error: fetchErr.message }
+
+  const existingIds = new Set((existing || []).map(c => c.contact_id))
+
+  // 2. Filter ids to add that are not already present
+  const idsToInsert = idsToAdd.filter(id => !existingIds.has(id))
+
+  if (idsToInsert.length === 0) {
+    // If all contacts were duplicates, return success directly
+    return { success: true as const, error: null }
+  }
+
+  const inserts = idsToInsert.map(id => ({
     campaign_id: campaignId,
-    contact_id: id
+    contact_id: id,
+    status: 'pending' as const,
+    attempts: 0
   }))
 
-  // Use upsert to gracefully ignore duplicates
   const { error } = await supabase
     .from('campaign_contacts')
-    .upsert(inserts, { onConflict: 'campaign_id,contact_id', ignoreDuplicates: true })
+    .insert(inserts)
 
   if (error) return { success: false as const, error: error.message }
 

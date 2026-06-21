@@ -6,12 +6,61 @@ import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { updateCampaign, addContactsToCampaign, removeContactFromCampaign } from '../actions'
+import { updateTemplate } from '../../templates/actions'
 
 export default function CampaignDetailsClient({ campaign, campaignContacts, allContacts, templates }: { campaign: any, campaignContacts: any[], allContacts: any[], templates: any[] }) {
   const [selectedTemplate, setSelectedTemplate] = useState(campaign.template_id || '')
   const [isUpdating, setIsUpdating] = useState(false)
   const [isManageAudienceOpen, setIsManageAudienceOpen] = useState(false)
   const [selectedContacts, setSelectedContacts] = useState<string[]>([])
+  const [campaignName, setCampaignName] = useState(campaign.name || '')
+
+  // Find current template details if selectedTemplate matches a template
+  const activeTemplate = templates.find(t => t.id === selectedTemplate)
+
+  // Local states for template edits
+  const [templateSubject, setTemplateSubject] = useState(activeTemplate?.subject || '')
+  const [templateDisplayName, setTemplateDisplayName] = useState(activeTemplate?.display_name || '')
+  const [templateBody, setTemplateBody] = useState(activeTemplate?.body || '')
+  const [templateName, setTemplateName] = useState(activeTemplate?.template_name || '')
+
+  const handleTemplateDropdownChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newId = e.target.value
+    setSelectedTemplate(newId)
+    const newTemplate = templates.find(t => t.id === newId)
+    if (newTemplate) {
+      setTemplateSubject(newTemplate.subject || '')
+      setTemplateDisplayName(newTemplate.display_name || '')
+      setTemplateBody(newTemplate.body || '')
+      setTemplateName(newTemplate.template_name || '')
+    } else {
+      setTemplateSubject('')
+      setTemplateDisplayName('')
+      setTemplateBody('')
+      setTemplateName('')
+    }
+  }
+
+  const handleSaveTemplateChanges = async () => {
+    if (!selectedTemplate) return
+    setIsUpdating(true)
+    try {
+      const res = await updateTemplate(selectedTemplate, {
+        template_name: templateName || activeTemplate?.template_name || 'Campaign Template',
+        subject: templateSubject,
+        display_name: templateDisplayName,
+        body: templateBody,
+      })
+      if (!res.success) throw new Error(res.error || 'Failed to update template')
+      toast.success('Template updated successfully')
+      window.location.reload()
+    } catch (err: any) {
+      toast.error(err.message)
+    } finally {
+      setIsUpdating(false)
+    }
+  }
+
 
   // Analytics
   const total = campaignContacts.length
@@ -21,9 +70,16 @@ export default function CampaignDetailsClient({ campaign, campaignContacts, allC
   const deliveryRate = total > 0 ? Math.round((sent / total) * 100) : 0
 
   const handleSaveSettings = async () => {
+    if (!campaignName.trim()) {
+      toast.error('Campaign name is required')
+      return
+    }
     setIsUpdating(true)
     try {
-      const res = await updateCampaign(campaign.id, { template_id: selectedTemplate || null })
+      const res = await updateCampaign(campaign.id, { 
+        template_id: selectedTemplate || null,
+        name: campaignName.trim()
+      })
       if (!res.success) throw new Error(res.error)
       toast.success('Campaign settings saved')
       window.location.reload()
@@ -37,18 +93,24 @@ export default function CampaignDetailsClient({ campaign, campaignContacts, allC
   const handleStatusChange = async (status: string) => {
     setIsUpdating(true)
     try {
-      const res = await updateCampaign(campaign.id, { status })
-      if (!res.success) throw new Error(res.error)
-
       if (status === 'running') {
         toast.loading('Campaign started — sending emails now...', { id: 'run-campaign' })
         // Immediately trigger the email processor so emails begin sending right away
-        const triggerRes = await fetch('/api/campaigns/trigger', { method: 'POST' })
+        const triggerRes = await fetch('/api/campaigns/trigger', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ campaignId: campaign.id })
+        })
         const triggerData = await triggerRes.json()
         toast.dismiss('run-campaign')
-        toast.success(`Campaign running! Sent: ${triggerData.sent ?? 0}, Failed: ${triggerData.failed ?? 0} in this batch.`)
+        if (!triggerRes.ok || triggerData.error) {
+          throw new Error(triggerData.error || 'Failed to start campaign')
+        }
+        toast.success(`Campaign completed successfully! Sent: ${triggerData.sent ?? 0}, Failed: ${triggerData.failed ?? 0}`)
       } else {
-        toast.success(`Campaign ${status}`)
+        const res = await updateCampaign(campaign.id, { status })
+        if (!res.success) throw new Error(res.error)
+        toast.success(`Campaign paused successfully`)
       }
 
       window.location.reload()
@@ -180,33 +242,119 @@ export default function CampaignDetailsClient({ campaign, campaignContacts, allC
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Settings Panel */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 h-fit">
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Settings</h2>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Template</label>
-              <select 
-                value={selectedTemplate} 
-                onChange={(e) => setSelectedTemplate(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-transparent"
-                disabled={campaign.status === 'running'}
+        {/* Left Column: Settings and Dynamic Template Editor */}
+        <div className="lg:col-span-1 space-y-6">
+          {/* Settings Panel */}
+          <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Settings</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Campaign Name</label>
+                <input 
+                  type="text" 
+                  value={campaignName} 
+                  onChange={(e) => setCampaignName(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-transparent text-slate-900 dark:text-white dark:bg-slate-800 text-sm"
+                  placeholder="Campaign Name"
+                  disabled={campaign.status === 'running'}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Template</label>
+                <select 
+                  value={selectedTemplate} 
+                  onChange={handleTemplateDropdownChange}
+                  className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-transparent text-slate-900 dark:text-white dark:bg-slate-800"
+                  disabled={campaign.status === 'running'}
+                >
+                  <option value="">Select a template...</option>
+                  {templates.filter(t => !t.is_draft).map(t => (
+                    <option key={t.id} value={t.id}>{t.template_name}</option>
+                  ))}
+                </select>
+              </div>
+              <Button 
+                className="w-full" 
+                onClick={handleSaveSettings} 
+                disabled={isUpdating || (campaign.template_id === selectedTemplate && campaign.name === campaignName)}
               >
-                <option value="">Select a template...</option>
-                {templates.map(t => (
-                  <option key={t.id} value={t.id}>{t.template_name}</option>
-                ))}
-              </select>
+                <Save className="w-4 h-4 mr-1.5" />
+                Save Settings
+              </Button>
             </div>
-            <Button 
-              className="w-full" 
-              onClick={handleSaveSettings} 
-              disabled={isUpdating || campaign.template_id === selectedTemplate}
-            >
-              <Save className="w-4 h-4 mr-1.5" />
-              Save Settings
-            </Button>
           </div>
+
+          {/* Dynamic Template Editor */}
+          {selectedTemplate && (
+            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 space-y-4">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Edit Template Content</h3>
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Template Name</label>
+                <input 
+                  type="text" 
+                  value={templateName} 
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-transparent text-slate-900 dark:text-white"
+                  placeholder="Template Name"
+                  disabled={campaign.status === 'running'}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Sender Display Name</label>
+                <input 
+                  type="text" 
+                  value={templateDisplayName} 
+                  onChange={(e) => setTemplateDisplayName(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-transparent text-slate-900 dark:text-white"
+                  placeholder="e.g. Acme Team"
+                  disabled={campaign.status === 'running'}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Email Subject</label>
+                <input 
+                  type="text" 
+                  value={templateSubject} 
+                  onChange={(e) => setTemplateSubject(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-transparent text-slate-900 dark:text-white font-medium"
+                  placeholder="Subject Line"
+                  disabled={campaign.status === 'running'}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Email Body (HTML)</label>
+                <textarea 
+                  value={templateBody} 
+                  onChange={(e) => setTemplateBody(e.target.value)}
+                  rows={8}
+                  className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-transparent text-slate-900 dark:text-white font-mono text-sm"
+                  placeholder="<h1>Hello {{name}}</h1>"
+                  disabled={campaign.status === 'running'}
+                />
+                <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                  Available tags: <code className="bg-slate-100 dark:bg-slate-700 px-1 py-0.5 rounded text-[10px] font-mono font-semibold">{"{{name}}"}</code>, <code className="bg-slate-100 dark:bg-slate-700 px-1 py-0.5 rounded text-[10px] font-mono font-semibold">{"{{first_name}}"}</code>, <code className="bg-slate-100 dark:bg-slate-700 px-1 py-0.5 rounded text-[10px] font-mono font-semibold">{"{{last_name}}"}</code>, <code className="bg-slate-100 dark:bg-slate-700 px-1 py-0.5 rounded text-[10px] font-mono font-semibold">{"{{email}}"}</code>, <code className="bg-slate-100 dark:bg-slate-700 px-1 py-0.5 rounded text-[10px] font-mono font-semibold">{"{{company}}"}</code>
+                </p>
+              </div>
+
+              <Button 
+                className="w-full bg-green-600 hover:bg-green-700 text-white" 
+                onClick={handleSaveTemplateChanges} 
+                disabled={isUpdating || (
+                  activeTemplate?.subject === templateSubject &&
+                  activeTemplate?.display_name === templateDisplayName &&
+                  activeTemplate?.body === templateBody &&
+                  activeTemplate?.template_name === templateName
+                )}
+              >
+                <Save className="w-4 h-4 mr-1.5" />
+                Save Template Changes
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Audience Panel */}
