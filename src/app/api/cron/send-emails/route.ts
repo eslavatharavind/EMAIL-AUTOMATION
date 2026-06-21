@@ -5,6 +5,17 @@ import { verifySignatureAppRouter } from "@upstash/qstash/nextjs"
 
 async function handler(request: Request) {
   try {
+    console.log("QStash cron request received at /api/cron/send-emails", {
+      method: request.method,
+      url: request.url,
+      headers: {
+        host: request.headers.get("host"),
+        "user-agent": request.headers.get("user-agent"),
+        "x-upstash-signature": request.headers.get("x-upstash-signature") ? "present" : "missing",
+        "x-vercel-protection-bypass": request.headers.get("x-vercel-protection-bypass") ? "present" : "missing"
+      }
+    });
+
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
