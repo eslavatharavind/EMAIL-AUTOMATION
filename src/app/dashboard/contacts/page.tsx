@@ -3,16 +3,27 @@ import ContactsClient from './client-page'
 
 export default async function ContactsPage() {
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
 
   const { data: contacts } = await supabase
     .from('contacts')
-    .select('*')
+    .select('*, email_templates(template_name)')
     .order('created_at', { ascending: false })
 
   const { data: templates } = await supabase
     .from('email_templates')
     .select('*')
     .order('created_at', { ascending: false })
+
+  let globalDefaultTemplateId = null
+  if (user) {
+    const { data: userSettings } = await supabase
+      .from('user_settings')
+      .select('default_template_id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    globalDefaultTemplateId = userSettings?.default_template_id || null
+  }
 
   return (
     <div className="space-y-6">
@@ -24,7 +35,11 @@ export default async function ContactsPage() {
           </p>
         </div>
       </div>
-      <ContactsClient initialContacts={contacts || []} templates={templates || []} />
+      <ContactsClient 
+        initialContacts={contacts || []} 
+        templates={templates || []} 
+        globalDefaultTemplateId={globalDefaultTemplateId}
+      />
     </div>
   )
 }

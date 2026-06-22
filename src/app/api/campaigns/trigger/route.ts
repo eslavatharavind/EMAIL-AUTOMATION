@@ -1,26 +1,22 @@
 import { NextResponse } from 'next/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
-import nodemailer from 'nodemailer'
+import { resolveTemplate, sendSharedEmail } from '@/lib/email-service'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request) {
   try {
-    // Parse campaignId from body first
     let campaignId = ''
     try {
       const body = await request.json()
       campaignId = body.campaignId
-    } catch (e) {
-      // ignore
-    }
+    } catch (e) { }
 
     if (!campaignId) {
       return NextResponse.json({ error: 'campaignId is required' }, { status: 400 })
     }
 
-    // Initialize Supabase Admin client for server-to-server operations
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!supabaseUrl || !supabaseKey) {
@@ -28,18 +24,14 @@ export async function POST(request: Request) {
     }
     const supabaseAdmin = createSupabaseAdmin(supabaseUrl, supabaseKey)
 
-    // Verify session
     const supabaseSession = await createClient()
     const { data: { user } } = await supabaseSession.auth.getUser()
 
-    // 1. Fetch campaign securely
     let query = supabaseAdmin
       .from('campaigns')
       .select('*, email_templates ( id, template_name, subject, display_name, body )')
       .eq('id', campaignId)
 
-    // Only enforce user_id if called from an active browser session
-    // If no session exists, we rely on the unguessable UUID (Service Role bypasses RLS)
     if (user) {
       query = query.eq('user_id', user.id)
     }
@@ -52,7 +44,6 @@ export async function POST(request: Request) {
 
     const effectiveUserId = user?.id || campaign.user_id
 
-    // 2. Fetch contacts assigned to the campaign
     const { data: campaignContacts, error: ccErr } = await supabaseAdmin
       .from('campaign_contacts')
       .select(`
@@ -69,16 +60,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No contacts available for this campaign.' }, { status: 400 })
     }
 
-    // Check if there is an email template
-    const template = Array.isArray(campaign.email_templates) 
-      ? campaign.email_templates[0] 
-      : campaign.email_templates
+    const templateRaw = campaign.email_templates
+    const campaignTemplate = Array.isArray(templateRaw) ? templateRaw[0] : templateRaw
 
-    if (!campaign.template_id || !template) {
+    if (!campaign.template_id || !campaignTemplate) {
       return NextResponse.json({ error: 'No template selected for this campaign.' }, { status: 400 })
     }
 
-    // Update campaign status to 'running'
     await supabaseAdmin.from('campaigns').update({ status: 'running' }).eq('id', campaignId)
     await supabaseAdmin.from('activity_logs').insert({
       action: 'campaign_started',
@@ -86,115 +74,52 @@ export async function POST(request: Request) {
       details: `Campaign "${campaign.name}" started`
     })
 
-    // 3. Setup Nodemailer
-    const zohoEmail = process.env.ZOHO_EMAIL
-    const zohoPassword = process.env.ZOHO_PASSWORD
-    const zohoHost = process.env.ZOHO_SMTP_HOST || 'smtp.zoho.in'
+    // Fetch user settings
+    const { data: userSettings } = await supabaseAdmin
+      .from('user_settings')
+      .select('*, email_templates ( id, template_name, subject, display_name, body )')
+      .eq('user_id', effectiveUserId)
+      .maybeSingle()
 
-    if (!zohoEmail || !zohoPassword) {
-      return NextResponse.json({ error: 'Missing Zoho SMTP credentials in environment.' }, { status: 500 })
-    }
-
-    const transporter = nodemailer.createTransport({
-      host: zohoHost,
-      port: 465,
-      secure: true,
-      auth: {
-        user: zohoEmail,
-        pass: zohoPassword,
-      },
-    })
+    const globalDefaultTemplate = userSettings?.email_templates
 
     let sentCount = 0
     let failedCount = 0
 
-    const replaceVariables = (text: string, contact: any) => {
-      const nameParts = (contact.name || '').split(' ')
-      const firstName = nameParts[0] || ''
-      const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : ''
-
-      return (text || '')
-        .replace(/{{name}}/g, contact.name || '')
-        .replace(/{{first_name}}/g, firstName)
-        .replace(/{{last_name}}/g, lastName)
-        .replace(/{{email}}/g, contact.email || '')
-        .replace(/{{company}}/g, contact.company || '')
-        .replace(/{{phone_number}}/g, contact.phone_number || '')
-        .replace(/{{source}}/g, contact.source || '')
-    }
-
-    // 4. Send emails to pending or failed contacts (attempts < 3)
     const targetContacts = campaignContacts.filter(cc => 
       cc.status === 'pending' || (cc.status === 'failed' && cc.attempts < 3)
     )
 
-    // Send the first 5 contacts synchronously in the trigger endpoint to give quick feedback
     const batchToProcess = targetContacts.slice(0, 5)
 
     for (const item of batchToProcess) {
       const contact = Array.isArray(item.contacts) ? item.contacts[0] : item.contacts
       if (!contact) continue
 
-      const finalSubject = replaceVariables(template.subject, contact)
-      const finalHtml = replaceVariables(template.body, contact)
-      const plainTextFallback = finalHtml.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
-      const fromName = template.display_name 
-        ? `"${template.display_name}" <${zohoEmail}>` 
-        : zohoEmail
+      const templateOptions = await resolveTemplate(
+        campaignTemplate,
+        null, // Campaign overrides contact assigned template
+        globalDefaultTemplate,
+        contact,
+        userSettings || {}
+      )
 
-      let sendError = null
-      try {
-        await transporter.sendMail({
-          from: fromName,
-          to: contact.email,
-          subject: finalSubject,
-          html: finalHtml,
-          text: plainTextFallback
-        })
-        await new Promise(resolve => setTimeout(resolve, 300)) // small spacing between emails
-      } catch (err: any) {
-        sendError = err
-      }
-
-      const newStatus = sendError ? 'failed' : 'sent'
-      const newAttempts = item.attempts + 1
-
-      await supabaseAdmin
-        .from('campaign_contacts')
-        .update({
-          status: newStatus,
-          attempts: newAttempts,
-          error_message: sendError ? sendError.message : null,
-          sent_at: newStatus === 'sent' ? new Date().toISOString() : null
-        })
-        .eq('id', item.id)
-
-      // Also update the global contacts table status
-      await supabaseAdmin
-        .from('contacts')
-        .update({
-          status: newStatus,
-          sent_at: newStatus === 'sent' ? new Date().toISOString() : null
-        })
-        .eq('id', contact.id)
-
-      await supabaseAdmin.from('activity_logs').insert({
-        action: newStatus === 'sent' ? 'email_sent' : 'email_failed',
-        contact_email: contact.email,
-        user_id: effectiveUserId,
-        details: newStatus === 'sent' 
-          ? `Campaign: ${campaign.name}` 
-          : `Campaign: ${campaign.name} - Failed (Attempt ${newAttempts}/3): ${sendError?.message || 'Unknown'}`
+      const res = await sendSharedEmail({
+        contact,
+        campaignId: campaign.id,
+        campaignContactId: item.id,
+        templateOptions,
+        userId: effectiveUserId,
+        userSettings: userSettings || {}
       })
 
-      if (newStatus === 'sent') sentCount++
+      if (res.success) sentCount++
       else failedCount++
     }
 
     const remainingPendingCount = targetContacts.length - batchToProcess.length
 
     if (remainingPendingCount === 0) {
-      // If we finished processing all contacts in this trigger call, set status to completed
       await supabaseAdmin.from('campaigns').update({ status: 'completed' }).eq('id', campaignId)
       await supabaseAdmin.from('activity_logs').insert({
         action: 'campaign_completed',
@@ -202,7 +127,7 @@ export async function POST(request: Request) {
         details: `Campaign "${campaign.name}" completed`
       })
     } else {
-      console.log(`[TRIGGER] Campaign "${campaign.name}" has ${remainingPendingCount} remaining contacts. Leaving in 'running' status for QStash cron.`);
+      console.log(`[TRIGGER] Campaign "${campaign.name}" has ${remainingPendingCount} remaining contacts.`);
     }
 
     return NextResponse.json({ success: true, sent: sentCount, failed: failedCount, remaining: remainingPendingCount })

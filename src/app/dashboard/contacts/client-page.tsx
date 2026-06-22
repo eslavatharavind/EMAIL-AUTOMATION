@@ -5,10 +5,10 @@ import { createClient } from '@/lib/supabase/client'
 import * as XLSX from 'xlsx'
 import { z } from 'zod'
 import { toast } from 'sonner'
-import { Upload, RefreshCw, Send, Download, Plus, Edit2, Trash2, X, Paperclip, Eye } from 'lucide-react'
+import { Upload, RefreshCw, Send, Download, Plus, Edit2, Trash2, X, Paperclip, Eye, CheckSquare, Square, ChevronDown } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
-import { sendEmail, createContact, updateContact, deleteContact } from './actions'
+import { sendEmail, createContact, updateContact, deleteContact, bulkAssignTemplate } from './actions'
 
 const contactSchema = z.object({
   name: z.string().min(1),
@@ -16,6 +16,7 @@ const contactSchema = z.object({
   phone_number: z.string().optional().default(''),
   company: z.string().optional().default(''),
   source: z.string().optional().default('Excel Upload'),
+  template_id: z.string().nullable().optional()
 })
 
 type Template = {
@@ -26,17 +27,31 @@ type Template = {
   body: string
 }
 
-export default function ContactsClient({ initialContacts, templates }: { initialContacts: any[], templates: Template[] }) {
+export default function ContactsClient({ 
+  initialContacts, 
+  templates, 
+  globalDefaultTemplateId 
+}: { 
+  initialContacts: any[], 
+  templates: Template[],
+  globalDefaultTemplateId: string | null
+}) {
   const [contacts, setContacts] = useState(initialContacts)
   const [isUploading, setIsUploading] = useState(false)
   const [isProcessingQueue, setIsProcessingQueue] = useState(false)
+  
+  // Selection State
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
   const supabase = createClient()
   const router = useRouter()
 
   // Contact Modal State
   const [isContactModalOpen, setIsContactModalOpen] = useState(false)
   const [editingContact, setEditingContact] = useState<any>(null)
-  const [contactForm, setContactForm] = useState({ name: '', email: '', phone_number: '', company: '', source: 'Manual Entry' })
+  const [contactForm, setContactForm] = useState({ 
+    name: '', email: '', phone_number: '', company: '', source: 'Manual Entry', template_id: '' 
+  })
   const [isSavingContact, setIsSavingContact] = useState(false)
 
   // Send Email Modal State
@@ -48,6 +63,27 @@ export default function ContactsClient({ initialContacts, templates }: { initial
   const [isSendingEmail, setIsSendingEmail] = useState(false)
   const [isPreviewMode, setIsPreviewMode] = useState(false)
 
+  // Bulk Assign Modal State
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false)
+  const [bulkTemplateId, setBulkTemplateId] = useState<string>('')
+  const [isBulkAssigning, setIsBulkAssigning] = useState(false)
+
+  // Selection Handlers
+  const toggleSelectAll = () => {
+    if (selectedIds.size === contacts.length && contacts.length > 0) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(contacts.map(c => c.id)))
+    }
+  }
+
+  const toggleSelect = (id: string) => {
+    const newSet = new Set(selectedIds)
+    if (newSet.has(id)) newSet.delete(id)
+    else newSet.add(id)
+    setSelectedIds(newSet)
+  }
+
   // Contact Modal Handlers
   const openContactModal = (contact: any = null) => {
     if (contact) {
@@ -56,11 +92,12 @@ export default function ContactsClient({ initialContacts, templates }: { initial
         email: contact.email || '',
         phone_number: contact.phone_number || '',
         company: contact.company || '',
-        source: contact.source || 'Manual Entry'
+        source: contact.source || 'Manual Entry',
+        template_id: contact.template_id || ''
       })
       setEditingContact(contact)
     } else {
-      setContactForm({ name: '', email: '', phone_number: '', company: '', source: 'Manual Entry' })
+      setContactForm({ name: '', email: '', phone_number: '', company: '', source: 'Manual Entry', template_id: '' })
       setEditingContact(null)
     }
     setIsContactModalOpen(true)
@@ -70,19 +107,22 @@ export default function ContactsClient({ initialContacts, templates }: { initial
     e.preventDefault()
     setIsSavingContact(true)
     try {
-      const parsed = contactSchema.parse(contactForm)
+      const parsed = contactSchema.parse({
+        ...contactForm,
+        template_id: contactForm.template_id || null
+      })
       if (editingContact) {
         const res = await updateContact(editingContact.id, parsed)
         if (!res.success) throw new Error(res.error)
-        setContacts(contacts.map(c => c.id === editingContact.id ? { ...c, ...parsed } : c))
         toast.success('Contact updated')
       } else {
         const res = await createContact(parsed)
         if (!res.success) throw new Error(res.error)
         toast.success('Contact created')
-        const { data } = await supabase.from('contacts').select('*').order('created_at', { ascending: false })
-        if (data) setContacts(data)
       }
+      
+      const { data } = await supabase.from('contacts').select('*, email_templates(template_name)').order('created_at', { ascending: false })
+      if (data) setContacts(data)
       setIsContactModalOpen(false)
     } catch (err: any) {
       if (err instanceof z.ZodError) {
@@ -104,6 +144,26 @@ export default function ContactsClient({ initialContacts, templates }: { initial
       toast.success('Contact deleted')
     } catch (err: any) {
       toast.error(err.message || 'Error deleting contact')
+    }
+  }
+
+  const handleBulkAssign = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsBulkAssigning(true)
+    try {
+      const templateVal = bulkTemplateId === 'clear' ? null : bulkTemplateId
+      const res = await bulkAssignTemplate(Array.from(selectedIds), templateVal)
+      if (!res.success) throw new Error(res.error)
+      
+      toast.success('Templates assigned successfully')
+      const { data } = await supabase.from('contacts').select('*, email_templates(template_name)').order('created_at', { ascending: false })
+      if (data) setContacts(data)
+      setIsBulkModalOpen(false)
+      setSelectedIds(new Set())
+    } catch (err: any) {
+      toast.error(err.message || 'Error assigning templates')
+    } finally {
+      setIsBulkAssigning(false)
     }
   }
 
@@ -189,7 +249,7 @@ export default function ContactsClient({ initialContacts, templates }: { initial
       
       if (res.success) {
         toast.success('Email sent successfully!')
-        const { data } = await supabase.from('contacts').select('*').order('created_at', { ascending: false })
+        const { data } = await supabase.from('contacts').select('*, email_templates(template_name)').order('created_at', { ascending: false })
         if (data) setContacts(data)
         setIsSendModalOpen(false)
       } else {
@@ -254,7 +314,7 @@ export default function ContactsClient({ initialContacts, templates }: { initial
 
       toast.success(`Imported ${validContacts.length} contacts`)
       
-      const { data: updated } = await supabase.from('contacts').select('*').order('created_at', { ascending: false })
+      const { data: updated } = await supabase.from('contacts').select('*, email_templates(template_name)').order('created_at', { ascending: false })
       if (updated) setContacts(updated)
       
     } catch (err: any) {
@@ -268,7 +328,7 @@ export default function ContactsClient({ initialContacts, templates }: { initial
   const handleProcessQueue = async () => {
     setIsProcessingQueue(true)
     try {
-      const res = await fetch('/api/queue/process')
+      const res = await fetch('/api/queue/process', { method: 'POST' })
       const data = await res.json()
       
       if (!res.ok) throw new Error(data.error || 'Failed to process emails')
@@ -277,7 +337,7 @@ export default function ContactsClient({ initialContacts, templates }: { initial
         toast.info('No pending contacts to process.')
       } else {
         toast.success(`Processed ${data.total} emails (${data.sent} sent, ${data.failed} failed).`)
-        const { data: updated } = await supabase.from('contacts').select('*').order('created_at', { ascending: false })
+        const { data: updated } = await supabase.from('contacts').select('*, email_templates(template_name)').order('created_at', { ascending: false })
         if (updated) setContacts(updated)
       }
     } catch (err: any) {
@@ -301,6 +361,17 @@ export default function ContactsClient({ initialContacts, templates }: { initial
       .replace(/{{company}}/g, contact.company || '')
       .replace(/{{phone_number}}/g, contact.phone_number || '')
       .replace(/{{source}}/g, contact.source || '')
+  }
+
+  const getTemplateDisplay = (contact: any) => {
+    if (contact.email_templates?.template_name) {
+      return <span className="text-indigo-600 dark:text-indigo-400 font-medium">{contact.email_templates.template_name}</span>
+    }
+    if (globalDefaultTemplateId) {
+      const t = templates.find(t => t.id === globalDefaultTemplateId)
+      if (t) return <span className="text-blue-600 dark:text-blue-400">Global: {t.template_name}</span>
+    }
+    return <span className="text-gray-500 italic">System Default</span>
   }
 
   return (
@@ -335,20 +406,37 @@ export default function ContactsClient({ initialContacts, templates }: { initial
           <Download className="w-4 h-4" />
           Export CSV
         </button>
-
-        <a href="/template.xlsx" download className="flex items-center gap-2 px-4 py-2 text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 transition-colors">
-          Download Template
-        </a>
       </div>
+
+      {selectedIds.size > 0 && (
+        <div className="bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-100 dark:border-indigo-800 rounded-lg p-3 flex items-center justify-between">
+          <div className="text-sm font-medium text-indigo-800 dark:text-indigo-300">
+            {selectedIds.size} contact{selectedIds.size > 1 ? 's' : ''} selected
+          </div>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => setIsBulkModalOpen(true)}
+              className="px-3 py-1.5 bg-white dark:bg-gray-800 border border-indigo-200 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 rounded hover:bg-indigo-50 dark:hover:bg-indigo-900/50 text-sm font-medium transition-colors"
+            >
+              Assign Template
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
             <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
               <tr>
+                <th className="px-6 py-3 w-[40px]">
+                  <button onClick={toggleSelectAll} className="text-gray-400 hover:text-indigo-600">
+                    {selectedIds.size === contacts.length && contacts.length > 0 ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                  </button>
+                </th>
                 <th className="px-6 py-3">Name</th>
                 <th className="px-6 py-3">Email</th>
-                <th className="px-6 py-3">Company</th>
+                <th className="px-6 py-3">Template</th>
                 <th className="px-6 py-3">Status</th>
                 <th className="px-6 py-3 text-right">Actions</th>
               </tr>
@@ -356,9 +444,14 @@ export default function ContactsClient({ initialContacts, templates }: { initial
             <tbody>
               {contacts.map((contact) => (
                 <tr key={contact.id} className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
+                  <td className="px-6 py-4">
+                    <button onClick={() => toggleSelect(contact.id)} className="text-gray-400 hover:text-indigo-600">
+                      {selectedIds.has(contact.id) ? <CheckSquare className="w-4 h-4 text-indigo-600" /> : <Square className="w-4 h-4" />}
+                    </button>
+                  </td>
                   <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{contact.name}</td>
                   <td className="px-6 py-4">{contact.email}</td>
-                  <td className="px-6 py-4">{contact.company || '-'}</td>
+                  <td className="px-6 py-4">{getTemplateDisplay(contact)}</td>
                   <td className="px-6 py-4">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                       contact.status === 'sent' ? 'bg-green-100 text-green-800' :
@@ -389,7 +482,7 @@ export default function ContactsClient({ initialContacts, templates }: { initial
               ))}
               {contacts.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
                     No contacts found. Upload an Excel file or add manually to get started.
                   </td>
                 </tr>
@@ -398,6 +491,46 @@ export default function ContactsClient({ initialContacts, templates }: { initial
           </table>
         </div>
       </div>
+
+      {/* Bulk Assign Modal */}
+      {isBulkModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md overflow-hidden flex flex-col">
+            <div className="flex justify-between items-center p-4 border-b dark:border-gray-700">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Assign Template to {selectedIds.size} Contacts
+              </h2>
+              <button onClick={() => setIsBulkModalOpen(false)} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4">
+              <form id="bulk-assign-form" onSubmit={handleBulkAssign} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Select Template</label>
+                  <select 
+                    value={bulkTemplateId} 
+                    onChange={e => setBulkTemplateId(e.target.value)} 
+                    className="w-full px-3 py-2 border rounded-md dark:bg-gray-900 dark:border-gray-700 dark:text-white"
+                  >
+                    <option value="" disabled>-- Select a Template --</option>
+                    <option value="clear">🚫 Use Global/System Default (Clear Assignment)</option>
+                    {templates.map(t => (
+                      <option key={t.id} value={t.id}>{t.template_name}</option>
+                    ))}
+                  </select>
+                </div>
+              </form>
+            </div>
+            <div className="p-4 border-t dark:border-gray-700 flex justify-end gap-3 bg-gray-50 dark:bg-gray-800/50">
+              <button type="button" onClick={() => setIsBulkModalOpen(false)} className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-600">Cancel</button>
+              <button form="bulk-assign-form" type="submit" disabled={isBulkAssigning || !bulkTemplateId} className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50">
+                {isBulkAssigning ? 'Applying...' : 'Apply Template'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Manual Contact Modal */}
       {isContactModalOpen && (
@@ -420,6 +553,19 @@ export default function ContactsClient({ initialContacts, templates }: { initial
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
                   <input required type="email" value={contactForm.email} onChange={e => setContactForm({...contactForm, email: e.target.value})} className="w-full px-3 py-2 border rounded-md dark:bg-gray-900 dark:border-gray-700 dark:text-white" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Template Assignment (Optional)</label>
+                  <select 
+                    value={contactForm.template_id || ''} 
+                    onChange={e => setContactForm({...contactForm, template_id: e.target.value})} 
+                    className="w-full px-3 py-2 border rounded-md dark:bg-gray-900 dark:border-gray-700 dark:text-white"
+                  >
+                    <option value="">-- Use Global Default --</option>
+                    {templates.map(t => (
+                      <option key={t.id} value={t.id}>{t.template_name}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Phone Number (Optional)</label>
@@ -445,7 +591,7 @@ export default function ContactsClient({ initialContacts, templates }: { initial
         </div>
       )}
 
-      {/* Send Email Modal */}
+      {/* Send Email Modal (unchanged from earlier, truncated for brevity here but keeping it fully intact) */}
       {isSendModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">

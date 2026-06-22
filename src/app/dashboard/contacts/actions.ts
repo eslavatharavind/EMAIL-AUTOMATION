@@ -1,17 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import nodemailer from 'nodemailer'
-
-const transporter = nodemailer.createTransport({
-  host: process.env.ZOHO_SMTP_HOST || 'smtp.zoho.in',
-  port: 465,
-  secure: true, // true for 465
-  auth: {
-    user: process.env.ZOHO_EMAIL,
-    pass: process.env.ZOHO_PASSWORD,
-  },
-})
+import { resolveTemplate, sendSharedEmail } from '@/lib/email-service'
 
 export async function sendEmail(
   contactId: string | 'custom', 
@@ -33,10 +23,10 @@ export async function sendEmail(
   let contact: any = null
 
   if (contactId !== 'custom') {
-    // 2. Fetch the contact by ID
+    // 2. Fetch the contact by ID along with its template
     const { data, error: fetchError } = await supabase
       .from('contacts')
-      .select('*')
+      .select('*, email_templates ( id, template_name, subject, display_name, body )')
       .eq('id', contactId)
       .eq('user_id', user.id)
       .single()
@@ -49,7 +39,7 @@ export async function sendEmail(
     // Check if the contact already exists
     const { data: existingContact } = await supabase
       .from('contacts')
-      .select('*')
+      .select('*, email_templates ( id, template_name, subject, display_name, body )')
       .eq('email', options.toEmail)
       .eq('user_id', user.id)
       .maybeSingle()
@@ -57,7 +47,7 @@ export async function sendEmail(
     if (existingContact) {
       contact = existingContact
     } else {
-      // Create the contact dynamically so we can track status!
+      // Create the contact dynamically
       const { data: newContact, error: createErr } = await supabase
         .from('contacts')
         .insert({
@@ -75,72 +65,50 @@ export async function sendEmail(
     }
   }
 
-  // 3. Process Template Variables
-  const replaceVariables = (text: string) => {
-    return text
-      .replace(/{{name}}/g, contact.name || '')
-      .replace(/{{email}}/g, contact.email || '')
-      .replace(/{{company}}/g, contact.company || '')
-      .replace(/{{phone_number}}/g, contact.phone_number || '')
-      .replace(/{{source}}/g, contact.source || '')
+  // Fetch user settings
+  const { data: userSettings } = await supabase
+    .from('user_settings')
+    .select('*, email_templates ( id, template_name, subject, display_name, body )')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  const globalDefaultTemplate = userSettings?.email_templates
+
+  let templateOptions
+  if (options?.subject || options?.html) {
+    // Manual override from compose modal
+    templateOptions = {
+      subject: options.subject || `Hello ${contact.name} - Welcome to MailFlow!`,
+      body: options.html || `<p>Hi ${contact.name},</p><p>We are excited to connect with you from ${contact.company || 'your company'}!</p><br><p>Best,<br>MailFlow Team</p>`,
+      display_name: options.displayName || userSettings?.display_name || '',
+      source: 'assigned' as const // Treating manual override as 'assigned' level
+    }
+  } else {
+    templateOptions = await resolveTemplate(
+      null, // No campaign
+      contact?.email_templates,
+      globalDefaultTemplate,
+      contact,
+      userSettings || {}
+    )
   }
 
-  const finalSubject = options?.subject 
-    ? replaceVariables(options.subject) 
-    : `Hello ${contact.name} - Welcome to MailFlow!`
-    
-  const finalHtml = options?.html 
-    ? replaceVariables(options.html) 
-    : `<p>Hi ${contact.name},</p><p>We are excited to connect with you from ${contact.company || 'your company'}!</p><br><p>Best,<br>MailFlow Team</p>`
-    
-  const fromName = options?.displayName 
-    ? `"${options.displayName}" <${process.env.ZOHO_EMAIL}>` 
-    : process.env.ZOHO_EMAIL
-
-  const plainTextFallback = finalHtml.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
-
-  // 4. Send via Nodemailer
-  let status = 'sent'
-  let details = 'Email sent manually'
-  try {
-    await transporter.sendMail({
-      from: fromName,
-      to: contact.email,
-      subject: finalSubject,
-      html: finalHtml,
-      text: plainTextFallback,
-      attachments: options?.attachments?.length ? options.attachments.map(att => ({
-        filename: att.filename,
-        content: Buffer.from(att.content, 'base64'),
-        contentType: att.contentType
-      })) : undefined
-    })
-  } catch (err: any) {
-    status = 'failed'
-    details = `Failed: ${err.message}`
-  }
-
-  // 5. Update contact status
-  await supabase
-    .from('contacts')
-    .update({ 
-      status,
-      sent_at: status === 'sent' ? new Date().toISOString() : null
-    })
-    .eq('id', contact.id)
-
-  // 6. Create activity log
-  await supabase.from('activity_logs').insert({
-    action: 'email_sent',
-    contact_email: contact.email,
-    user_id: user.id,
-    details
+  const res = await sendSharedEmail({
+    contact,
+    templateOptions,
+    userId: user.id,
+    userSettings: userSettings || {},
+    attachments: options?.attachments ? options.attachments.map(att => ({
+      filename: att.filename,
+      content: Buffer.from(att.content, 'base64'),
+      contentType: att.contentType
+    })) : []
   })
 
-  return { success: status === 'sent', status, details }
+  return { success: res.success, status: res.status, details: res.error || 'Email sent manually' }
 }
 
-export async function createContact(data: { name: string; email: string; phone_number?: string; company?: string; source?: string }) {
+export async function createContact(data: { name: string; email: string; phone_number?: string; company?: string; source?: string; template_id?: string | null }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { success: false, error: 'Not authenticated' }
@@ -157,7 +125,7 @@ export async function createContact(data: { name: string; email: string; phone_n
   return { success: true }
 }
 
-export async function updateContact(id: string, data: { name: string; email: string; phone_number?: string; company?: string; source?: string }) {
+export async function updateContact(id: string, data: { name: string; email: string; phone_number?: string; company?: string; source?: string; template_id?: string | null }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { success: false, error: 'Not authenticated' }
@@ -186,6 +154,28 @@ export async function deleteContact(id: string, email: string) {
     action: 'contact_deleted',
     user_id: user.id,
     details: `Contact ${email} deleted successfully`
+  })
+
+  return { success: true }
+}
+
+export async function bulkAssignTemplate(contactIds: string[], templateId: string | null) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { success: false, error: 'Not authenticated' }
+
+  const { error } = await supabase
+    .from('contacts')
+    .update({ template_id: templateId })
+    .in('id', contactIds)
+    .eq('user_id', user.id)
+
+  if (error) return { success: false, error: error.message }
+
+  await supabase.from('activity_logs').insert({
+    action: 'contact_updated',
+    user_id: user.id,
+    details: `Bulk updated template assignment for ${contactIds.length} contacts`
   })
 
   return { success: true }
