@@ -103,9 +103,11 @@ export default function SettingsClient({
                 onChange={e => setFormData({...formData, default_template_id: e.target.value})}
                 className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg dark:bg-slate-900 dark:text-white text-sm"
               >
-                <option value="">-- Use System Default Professional Template --</option>
+                <option value="">-- Select Global Default Template --</option>
                 {templates.map(t => (
-                  <option key={t.id} value={t.id}>{t.template_name}</option>
+                  <option key={t.id} value={t.id}>
+                    {t.template_name} {t.is_system_default ? '(System Default)' : ''}
+                  </option>
                 ))}
               </select>
             </div>

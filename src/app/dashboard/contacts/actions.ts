@@ -74,6 +74,13 @@ export async function sendEmail(
 
   const globalDefaultTemplate = userSettings?.email_templates
 
+  const { data: systemDefaultTemplate } = await supabase
+    .from('email_templates')
+    .select('id, template_name, subject, display_name, body')
+    .eq('user_id', user.id)
+    .eq('is_system_default', true)
+    .maybeSingle()
+
   let templateOptions
   if (options?.subject || options?.html) {
     // Manual override from compose modal
@@ -88,8 +95,7 @@ export async function sendEmail(
       null, // No campaign
       contact?.email_templates,
       globalDefaultTemplate,
-      contact,
-      userSettings || {}
+      systemDefaultTemplate
     )
   }
 

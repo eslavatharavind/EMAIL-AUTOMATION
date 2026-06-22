@@ -69,13 +69,25 @@ async function handler(request: Request) {
     globalContacts.forEach(c => { if (c.user_id) userIds.add(c.user_id) })
 
     const userSettingsMap: Record<string, any> = {}
+    const systemDefaultMap: Record<string, any> = {}
+
     if (userIds.size > 0) {
+      const userIdsArr = Array.from(userIds)
       const { data: settings } = await supabaseAdmin
         .from('user_settings')
         .select('*, email_templates ( id, template_name, subject, display_name, body )')
-        .in('user_id', Array.from(userIds))
+        .in('user_id', userIdsArr)
       if (settings) {
         settings.forEach(s => userSettingsMap[s.user_id] = s)
+      }
+
+      const { data: sysTemplates } = await supabaseAdmin
+        .from('email_templates')
+        .select('id, user_id, template_name, subject, display_name, body')
+        .in('user_id', userIdsArr)
+        .eq('is_system_default', true)
+      if (sysTemplates) {
+        sysTemplates.forEach(t => systemDefaultMap[t.user_id] = t)
       }
     }
 
@@ -93,13 +105,13 @@ async function handler(request: Request) {
       const campaignTemplate = Array.isArray(templateRaw) ? templateRaw[0] : templateRaw;
       const userSettings = userSettingsMap[campaign.user_id] || {}
       const globalDefaultTemplate = userSettings.email_templates
+      const systemDefaultTemplate = systemDefaultMap[campaign.user_id]
 
       const templateOptions = await resolveTemplate(
         campaignTemplate,
         null, // Campaign overrides contact assigned template
         globalDefaultTemplate,
-        contact,
-        userSettings
+        systemDefaultTemplate
       )
 
       const res = await sendSharedEmail({
@@ -118,14 +130,14 @@ async function handler(request: Request) {
     for (const contact of globalContacts) {
       const userSettings = userSettingsMap[contact.user_id] || {}
       const globalDefaultTemplate = userSettings.email_templates
+      const systemDefaultTemplate = systemDefaultMap[contact.user_id]
       const contactTemplate = contact.email_templates
 
       const templateOptions = await resolveTemplate(
         null, // No campaign
         contactTemplate,
         globalDefaultTemplate,
-        contact,
-        userSettings
+        systemDefaultTemplate
       )
 
       const res = await sendSharedEmail({

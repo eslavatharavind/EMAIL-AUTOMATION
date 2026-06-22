@@ -19,72 +19,91 @@ const transporter = nodemailer.createTransport({
   },
 })
 
-// Variables allowed: {{name}}, {{email}}, {{company}}, {{phone_number}}, {{source}}, {{display_name}}, {{sender_email}}
+// Ensures the user has a System Default Professional Template
+export async function ensureSystemDefaultTemplate(userId: string) {
+  // Check if it exists
+  const { data: existing } = await supabaseAdmin
+    .from('email_templates')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('is_system_default', true)
+    .maybeSingle()
+
+  if (existing) return existing.id;
+
+  const subject = `Welcome to {{company}}, {{name}}!`
+  const body = `
+<div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #334155; max-width: 600px; margin: 0 auto; padding: 32px 20px; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+  <!-- Header -->
+  <div style="text-align: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 24px; margin-bottom: 32px;">
+    <h1 style="color: {{primary_color}}; margin: 0 0 20px 0; font-size: 24px;">{{company}}</h1>
+  </div>
+  <!-- Body -->
+  <h2 style="color: #0f172a; font-size: 20px; font-weight: 600; margin-top: 0;">Hello {{name}},</h2>
+  <p style="margin-bottom: 16px; font-size: 16px;">We are absolutely thrilled to connect with you. At {{company}}, we believe in fostering strong relationships and driving innovation.</p>
+  <p style="margin-bottom: 24px; font-size: 16px;">We noticed your exceptional background and would love to explore how we can collaborate. Our platform is designed to streamline your workflows and elevate your business.</p>
+  <!-- CTA -->
+  <div style="text-align: center; margin: 32px 0;">
+    <a href="{{company_website}}" style="background-color: {{primary_color}}; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; display: inline-block; transition: opacity 0.2s;">Get Started Today</a>
+  </div>
+  <!-- Footer -->
+  <div style="margin-top: 40px; padding-top: 24px; border-top: 1px solid #f1f5f9; color: #64748b; font-size: 14px;">
+    <p style="margin: 0 0 4px 0;">Best Regards,</p>
+    <p style="margin: 0; font-weight: 600; color: #334155;">{{display_name}}</p>
+    <p style="margin: 0;">{{company}}</p>
+    <p style="margin: 0;">{{company_phone}}</p>
+    <p style="margin: 0;">
+      <a href="mailto:{{sender_email}}" style="color: {{primary_color}}; text-decoration: none;">{{sender_email}}</a>
+    </p>
+  </div>
+</div>`
+
+  const { data: newTemplate, error } = await supabaseAdmin
+    .from('email_templates')
+    .insert({
+      user_id: userId,
+      template_name: 'Professional Default Template',
+      subject,
+      display_name: '{{display_name}}',
+      body,
+      is_system_default: true,
+      is_draft: false
+    })
+    .select('id')
+    .single()
+
+  if (error) {
+    console.error("[EMAIL-SERVICE] Error provisioning system template:", error.message)
+    return null
+  }
+
+  return newTemplate.id
+}
+
+// Variables allowed: {{name}}, {{email}}, {{company}}, {{phone_number}}, {{source}}, {{display_name}}, {{sender_email}}, {{primary_color}}, {{company_website}}, {{company_phone}}
 export function replaceVariables(text: string, contact: any, senderSettings: any = {}) {
   const nameParts = (contact.name || '').split(' ')
   const firstName = nameParts[0] || ''
   const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : ''
+
+  const safeCompany = senderSettings.company_name || 'Our Company'
+  const safeColor = senderSettings.primary_color || '#4f46e5'
+  const safeWebsite = senderSettings.company_website || '#'
+  const safePhone = senderSettings.company_phone || ''
 
   return (text || '')
     .replace(/{{name}}/g, contact.name || '')
     .replace(/{{first_name}}/g, firstName)
     .replace(/{{last_name}}/g, lastName)
     .replace(/{{email}}/g, contact.email || '')
-    .replace(/{{company}}/g, contact.company || '')
+    .replace(/{{company}}/g, safeCompany)
     .replace(/{{phone_number}}/g, contact.phone_number || '')
     .replace(/{{source}}/g, contact.source || '')
-    .replace(/{{display_name}}/g, senderSettings.display_name || 'MailFlow Sender')
+    .replace(/{{display_name}}/g, senderSettings.display_name || 'The Team')
     .replace(/{{sender_email}}/g, senderSettings.sender_email || zohoEmail)
-}
-
-function getProfessionalDefaultTemplate(contact: any, senderSettings: any = {}) {
-  const primaryColor = senderSettings.primary_color || '#4f46e5'
-  const companyName = senderSettings.company_name || 'Our Company'
-  const displayName = senderSettings.display_name || 'The Team'
-  const senderEmail = senderSettings.sender_email || zohoEmail
-  const logoHtml = senderSettings.company_logo_url 
-    ? `<img src="${senderSettings.company_logo_url}" alt="${companyName} Logo" style="max-height: 40px; margin-bottom: 20px;">`
-    : `<h1 style="color: ${primaryColor}; margin: 0 0 20px 0; font-size: 24px;">${companyName}</h1>`
-
-  const subject = `Welcome to ${companyName}, {{name}}!`
-  
-  const body = `
-<div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #334155; max-width: 600px; margin: 0 auto; padding: 32px 20px; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
-  
-  <!-- Header -->
-  <div style="text-align: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 24px; margin-bottom: 32px;">
-    ${logoHtml}
-  </div>
-
-  <!-- Body -->
-  <h2 style="color: #0f172a; font-size: 20px; font-weight: 600; margin-top: 0;">Hello {{name}},</h2>
-  
-  <p style="margin-bottom: 16px; font-size: 16px;">We are absolutely thrilled to connect with you. At ${companyName}, we believe in fostering strong relationships and driving innovation.</p>
-  
-  <p style="margin-bottom: 24px; font-size: 16px;">We noticed your exceptional background and would love to explore how we can collaborate. Our platform is designed to streamline your workflows and elevate your business.</p>
-  
-  <!-- CTA -->
-  <div style="text-align: center; margin: 32px 0;">
-    <a href="#" style="background-color: ${primaryColor}; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; display: inline-block; transition: opacity 0.2s;">Get Started Today</a>
-  </div>
-
-  <!-- Footer -->
-  <div style="margin-top: 40px; padding-top: 24px; border-top: 1px solid #f1f5f9; color: #64748b; font-size: 14px;">
-    <p style="margin: 0 0 4px 0;">Best Regards,</p>
-    <p style="margin: 0; font-weight: 600; color: #334155;">{{display_name}}</p>
-    <p style="margin: 0;">{{company}}</p>
-    <p style="margin: 0;">
-      <a href="mailto:{{sender_email}}" style="color: ${primaryColor}; text-decoration: none;">{{sender_email}}</a>
-    </p>
-  </div>
-</div>
-  `
-
-  return {
-    subject,
-    body,
-    display_name: displayName
-  }
+    .replace(/{{primary_color}}/g, safeColor)
+    .replace(/{{company_website}}/g, safeWebsite)
+    .replace(/{{company_phone}}/g, safePhone)
 }
 
 export type TemplateOptions = {
@@ -99,8 +118,7 @@ export async function resolveTemplate(
   campaignTemplate: any,
   contactTemplate: any,
   globalDefaultTemplate: any,
-  contact: any,
-  userSettings: any = {}
+  systemDefaultTemplate: any
 ): Promise<TemplateOptions> {
   // 1. Campaign Template
   if (campaignTemplate) {
@@ -136,11 +154,21 @@ export async function resolveTemplate(
   }
 
   // 4. System Professional Template
-  const sysTemplate = getProfessionalDefaultTemplate(contact, userSettings)
+  if (systemDefaultTemplate) {
+    return {
+      id: systemDefaultTemplate.id,
+      subject: systemDefaultTemplate.subject,
+      body: systemDefaultTemplate.body,
+      display_name: systemDefaultTemplate.display_name,
+      source: 'system_default'
+    }
+  }
+
+  // Absolute Fail-safe Fallback (should never be hit if provisioning works)
   return {
-    subject: sysTemplate.subject,
-    body: sysTemplate.body,
-    display_name: sysTemplate.display_name,
+    subject: "Hello {{name}}",
+    body: "<p>Hello {{name}},</p><p>We are reaching out to connect with you.</p><p>Best,</p><p>{{display_name}}</p>",
+    display_name: "{{display_name}}",
     source: 'system_default'
   }
 }
@@ -167,9 +195,8 @@ export async function sendSharedEmail({
   const finalSubject = replaceVariables(templateOptions.subject, contact, userSettings)
   const finalHtml = replaceVariables(templateOptions.body, contact, userSettings)
   const plainText = finalHtml.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
-  const fromName = templateOptions.display_name 
-    ? `"${replaceVariables(templateOptions.display_name, contact, userSettings)}" <${zohoEmail}>` 
-    : zohoEmail
+  const fromNameText = templateOptions.display_name ? replaceVariables(templateOptions.display_name, contact, userSettings) : 'MailFlow Sender'
+  const fromName = `"${fromNameText}" <${zohoEmail}>`
 
   let sendError: any = null
   try {

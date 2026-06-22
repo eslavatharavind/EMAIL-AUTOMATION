@@ -1,8 +1,15 @@
 import { createClient } from '@/lib/supabase/server'
 import TemplatesClient from './client-page'
+import { ensureSystemDefaultTemplate } from '@/lib/email-service'
 
 export default async function TemplatesPage() {
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (user) {
+    // Auto-provision the system default template if it doesn't exist
+    await ensureSystemDefaultTemplate(user.id)
+  }
 
   const { data: templates } = await supabase
     .from('email_templates')

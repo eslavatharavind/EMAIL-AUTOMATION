@@ -29,6 +29,13 @@ export async function POST(request: Request) {
 
     const globalDefaultTemplate = userSettings?.email_templates
 
+    const { data: systemDefaultTemplate } = await supabaseAdmin
+      .from('email_templates')
+      .select('id, template_name, subject, display_name, body')
+      .eq('user_id', user.id)
+      .eq('is_system_default', true)
+      .maybeSingle()
+
     // 1. Fetch pending campaign contacts
     const { data: campaignContacts, error: fetchError } = await supabaseAdmin
       .from('campaign_contacts')
@@ -85,8 +92,7 @@ export async function POST(request: Request) {
         campaignTemplate,
         null, // Campaign overrides contact assigned template
         globalDefaultTemplate,
-        contact,
-        userSettings
+        systemDefaultTemplate
       )
 
       const res = await sendSharedEmail({
@@ -109,8 +115,7 @@ export async function POST(request: Request) {
         null, // No campaign
         contactTemplate,
         globalDefaultTemplate,
-        contact,
-        userSettings
+        systemDefaultTemplate
       )
 
       const res = await sendSharedEmail({

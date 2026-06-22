@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import SettingsClient from './client-page'
+import { ensureSystemDefaultTemplate } from '@/lib/email-service'
 
 export default async function SettingsPage() {
   const supabase = await createClient()
@@ -7,6 +8,8 @@ export default async function SettingsPage() {
 
   let initialSettings = null
   if (user) {
+    await ensureSystemDefaultTemplate(user.id)
+
     const { data } = await supabase
       .from('user_settings')
       .select('*')

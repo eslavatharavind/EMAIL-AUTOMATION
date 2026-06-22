@@ -229,7 +229,12 @@ export default function TemplatesClient({ initialTemplates }: { initialTemplates
                 <tr key={template.id} className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
                   <td className="px-6 py-4 font-medium text-gray-900 dark:text-white flex items-center gap-2">
                     <span>{template.template_name}</span>
-                    {template.is_draft && (
+                    {template.is_system_default && (
+                      <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-blue-100 text-blue-800 rounded dark:bg-blue-900/30 dark:text-blue-400">
+                        System Default
+                      </span>
+                    )}
+                    {template.is_draft && !template.is_system_default && (
                       <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-yellow-100 text-yellow-800 rounded dark:bg-yellow-900/30 dark:text-yellow-400">
                         Draft
                       </span>
@@ -248,9 +253,11 @@ export default function TemplatesClient({ initialTemplates }: { initialTemplates
                       <button onClick={() => openModal(template, true)} className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300" title="Duplicate">
                         <Copy className="w-4 h-4" />
                       </button>
-                      <button onClick={() => handleDelete(template.id, template.template_name)} className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300" title="Delete">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {!template.is_system_default && (
+                        <button onClick={() => handleDelete(template.id, template.template_name)} className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300" title="Delete">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
