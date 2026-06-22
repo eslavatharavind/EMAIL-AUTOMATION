@@ -268,7 +268,7 @@ export default function ContactsClient({ initialContacts, templates }: { initial
   const handleProcessQueue = async () => {
     setIsProcessingQueue(true)
     try {
-      const res = await fetch('/api/cron/send-emails')
+      const res = await fetch('/api/queue/process')
       const data = await res.json()
       
       if (!res.ok) throw new Error(data.error || 'Failed to process emails')
