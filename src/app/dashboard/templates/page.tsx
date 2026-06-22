@@ -19,6 +19,10 @@ export default async function TemplatesPage() {
     .select('*')
     .order('created_at', { ascending: false })
 
+  const filteredTemplates = (templates || []).filter(t => 
+    !t.is_system_default || (user && t.user_id === user.id)
+  )
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -29,7 +33,7 @@ export default async function TemplatesPage() {
           </p>
         </div>
       </div>
-      <TemplatesClient initialTemplates={templates || []} />
+      <TemplatesClient initialTemplates={filteredTemplates} />
     </div>
   )
 }

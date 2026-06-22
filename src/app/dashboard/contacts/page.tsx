@@ -15,6 +15,10 @@ export default async function ContactsPage() {
     .select('*')
     .order('created_at', { ascending: false })
 
+  const filteredTemplates = (templates || []).filter(t => 
+    !t.is_system_default || (user && t.user_id === user.id)
+  )
+
   let globalDefaultTemplateId = null
   if (user) {
     const { data: userSettings } = await supabase
@@ -37,7 +41,7 @@ export default async function ContactsPage() {
       </div>
       <ContactsClient 
         initialContacts={contacts || []} 
-        templates={templates || []} 
+        templates={filteredTemplates} 
         globalDefaultTemplateId={globalDefaultTemplateId}
       />
     </div>

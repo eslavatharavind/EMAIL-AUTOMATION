@@ -31,13 +31,17 @@ export default async function CampaignsPage() {
   // Fetch templates for the "Create Campaign" dropdown
   const { data: templates } = await supabase
     .from('email_templates')
-    .select('id, template_name, is_draft')
+    .select('id, template_name, is_draft, is_system_default, user_id')
+
+  const filteredTemplates = (templates || []).filter(t => 
+    !t.is_system_default || (user && t.user_id === user.id)
+  )
 
   if (tablesMissing) {
     return (
       <CampaignsClientPage
         campaigns={[]}
-        templates={templates || []}
+        templates={filteredTemplates}
         migrationRequired={true}
       />
     )
@@ -71,7 +75,7 @@ export default async function CampaignsPage() {
   return (
     <CampaignsClientPage
       campaigns={campaignsWithStats || []}
-      templates={templates || []}
+      templates={filteredTemplates}
       migrationRequired={false}
     />
   )

@@ -27,5 +27,9 @@ export default async function SettingsPage() {
     .select('*')
     .order('template_name', { ascending: true })
 
-  return <SettingsClient user={user} initialSettings={initialSettings} templates={templates || []} />
+  const filteredTemplates = (templates || []).filter(t => 
+    !t.is_system_default || (user && t.user_id === user.id)
+  )
+
+  return <SettingsClient user={user} initialSettings={initialSettings} templates={filteredTemplates} />
 }

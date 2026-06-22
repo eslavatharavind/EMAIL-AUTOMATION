@@ -37,14 +37,18 @@ export default async function CampaignDetailsPage({ params }: { params: Promise<
   // Fetch user templates
   const { data: templates } = await supabase
     .from('email_templates')
-    .select('id, template_name, is_draft')
+    .select('id, template_name, is_draft, is_system_default, user_id')
+
+  const filteredTemplates = (templates || []).filter(t => 
+    !t.is_system_default || (user && t.user_id === user.id)
+  )
 
   return (
     <CampaignDetailsClient 
       campaign={campaign} 
       campaignContacts={campaignContacts || []}
       allContacts={allContacts || []}
-      templates={templates || []}
+      templates={filteredTemplates}
     />
   )
 }
