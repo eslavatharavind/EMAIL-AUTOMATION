@@ -6,6 +6,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 // Import the Toaster component from the 'sonner' library to display toast notifications
 import { Toaster } from 'sonner'
+import { verifyEnvVariables } from '@/lib/env-check'
 
 // Configure the Geist Sans font
 const geistSans = Geist({
@@ -43,6 +44,8 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  verifyEnvVariables();
+
   // Return the base HTML structure
   return (
     // Render the <html> tag, set language to English

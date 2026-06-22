@@ -4,11 +4,15 @@ import { createBrowserClient } from '@supabase/ssr'
 
 // Export a function named 'createClient' so it can be imported and used in other files across the app.
 export function createClient() {
-  // Call the createBrowserClient function and return its result, which is an authenticated Supabase client instance.
-  return createBrowserClient(
-    // Pass the Supabase project URL from the environment variables. The '!' tells TypeScript we are sure this value exists.
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    // Pass the Supabase anonymous key from the environment variables. The '!' again tells TypeScript it's not null.
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  ) // Close the createBrowserClient function call.
-} // Close the createClient function block.
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  if (!supabaseUrl) {
+    throw new Error('Environment variable NEXT_PUBLIC_SUPABASE_URL is missing.')
+  }
+  if (!supabaseAnonKey) {
+    throw new Error('Environment variable NEXT_PUBLIC_SUPABASE_ANON_KEY is missing.')
+  }
+
+  return createBrowserClient(supabaseUrl, supabaseAnonKey)
+}
