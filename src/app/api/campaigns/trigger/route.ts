@@ -152,6 +152,15 @@ export async function POST(request: Request) {
         })
         .eq('id', item.id)
 
+      // Also update the global contacts table status
+      await supabase
+        .from('contacts')
+        .update({
+          status: newStatus,
+          sent_at: newStatus === 'sent' ? new Date().toISOString() : null
+        })
+        .eq('id', contact.id)
+
       await supabase.from('activity_logs').insert({
         action: newStatus === 'sent' ? 'email_sent' : 'email_failed',
         contact_email: contact.email,

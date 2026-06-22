@@ -245,6 +245,15 @@ async function handler(request: Request) {
           throw updateError;
         }
         console.log(`[CRON] Update contact status: Successfully updated campaign_contacts record ${item.id} to status: ${newStatus}`);
+
+        // Also update the global contacts table status
+        await supabaseAdmin
+          .from('contacts')
+          .update({
+            status: newStatus,
+            sent_at: newStatus === 'sent' ? new Date().toISOString() : null
+          })
+          .eq('id', contact.id);
       } catch (updateError: any) {
         console.error(`[CRON] ERROR: Failed updating campaign_contacts record ${item.id}:`, updateError.message);
       }
