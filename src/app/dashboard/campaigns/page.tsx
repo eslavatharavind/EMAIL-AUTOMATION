@@ -19,7 +19,6 @@ export default async function CampaignsPage() {
       *,
       email_templates ( id, template_name )
     `)
-    .eq('user_id', user.id)
     .order('created_at', { ascending: false })
 
   // If the table doesn't exist, show the migration banner
@@ -33,7 +32,6 @@ export default async function CampaignsPage() {
   const { data: templates } = await supabase
     .from('email_templates')
     .select('id, template_name, is_draft')
-    .eq('user_id', user.id)
 
   if (tablesMissing) {
     return (

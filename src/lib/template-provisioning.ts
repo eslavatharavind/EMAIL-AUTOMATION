@@ -1,27 +1,32 @@
-const { createClient } = require('@supabase/supabase-js')
+import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 
-const supabaseUrl = 'https://uxrqhcxqxuojrstgehbq.supabase.co'
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV4cnFoY3hxeHVvanJzdGdlaGJxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODI5MzY2OCwiZXhwIjoyMDkzODY5NjY4fQ.TdYkUMoZMHX-NzFcQCUV7G_73Hf73SPG3XglM-7TlNI'
-const supabaseAdmin = createClient(supabaseUrl, supabaseKey)
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+const supabaseAdmin = createSupabaseAdmin(supabaseUrl, supabaseKey)
 
-async function test() {
-  const { data: users, error: uErr } = await supabaseAdmin.auth.admin.listUsers()
-  if (uErr) { console.error('uErr', uErr); return; }
+export async function provisionTemplateForUser(userId: string) {
+  console.log(`[TEMPLATE-PROVISIONING] Started checking system default template for user: ${userId}`);
   
-  for (const user of users.users) {
-    console.log(`Checking user: ${user.id} (${user.email})`)
-    const { data: existing, error: eErr } = await supabaseAdmin
+  try {
+    // Check if system default template exists for this user
+    const { data: existing, error: checkError } = await supabaseAdmin
       .from('email_templates')
       .select('id')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .eq('is_system_default', true)
       .maybeSingle()
-      
-    if (eErr) console.error('eErr:', eErr)
-    if (existing) {
-      console.log('Already has system template:', existing.id)
-      continue;
+
+    if (checkError) {
+      console.error(`[TEMPLATE-PROVISIONING] Error checking existing template for user ${userId}:`, checkError.message);
+      throw checkError;
     }
+
+    if (existing) {
+      console.log(`[TEMPLATE-PROVISIONING] System default template already exists: ${existing.id} for user ${userId}`);
+      return existing.id;
+    }
+
+    console.log(`[TEMPLATE-PROVISIONING] No system default template found. Creating one for user: ${userId}`);
 
     const subject = `Welcome to {{company}}, {{name}}!`
     const body = `
@@ -50,10 +55,10 @@ async function test() {
   </div>
 </div>`
 
-    const { data: res, error: insErr } = await supabaseAdmin
+    const { data: newTemplate, error: insertError } = await supabaseAdmin
       .from('email_templates')
       .insert({
-        user_id: user.id,
+        user_id: userId,
         template_name: 'Professional Default Template',
         subject,
         display_name: '{{display_name}}',
@@ -62,13 +67,18 @@ async function test() {
         is_draft: false
       })
       .select('id')
-    
-    if (insErr) {
-      console.error('Insert error for user', user.id, ':', insErr)
-    } else {
-      console.log('Successfully provisioned real template:', res)
+      .single()
+
+    if (insertError) {
+      console.error(`[TEMPLATE-PROVISIONING] Error inserting system default template for user ${userId}:`, insertError.message);
+      return null;
     }
+
+    console.log(`[TEMPLATE-PROVISIONING] Successfully provisioned system default template: ${newTemplate.id} for user ${userId}`);
+    return newTemplate.id;
+
+  } catch (error: any) {
+    console.error(`[TEMPLATE-PROVISIONING] Exception caught while provisioning for user ${userId}:`, error.message);
+    return null;
   }
 }
-
-test()

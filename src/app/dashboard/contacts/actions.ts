@@ -28,7 +28,6 @@ export async function sendEmail(
       .from('contacts')
       .select('*, email_templates ( id, template_name, subject, display_name, body )')
       .eq('id', contactId)
-      .eq('user_id', user.id)
       .single()
     if (fetchError || !data) throw new Error('Contact not found')
     contact = data
@@ -41,7 +40,6 @@ export async function sendEmail(
       .from('contacts')
       .select('*, email_templates ( id, template_name, subject, display_name, body )')
       .eq('email', options.toEmail)
-      .eq('user_id', user.id)
       .maybeSingle()
 
     if (existingContact) {
@@ -69,7 +67,7 @@ export async function sendEmail(
   const { data: userSettings } = await supabase
     .from('user_settings')
     .select('*, email_templates ( id, template_name, subject, display_name, body )')
-    .eq('user_id', user.id)
+    .limit(1)
     .maybeSingle()
 
   const globalDefaultTemplate = userSettings?.email_templates
@@ -77,8 +75,8 @@ export async function sendEmail(
   const { data: systemDefaultTemplate } = await supabase
     .from('email_templates')
     .select('id, template_name, subject, display_name, body')
-    .eq('user_id', user.id)
     .eq('is_system_default', true)
+    .limit(1)
     .maybeSingle()
 
   let templateOptions
@@ -136,7 +134,7 @@ export async function updateContact(id: string, data: { name: string; email: str
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { success: false, error: 'Not authenticated' }
 
-  const { error } = await supabase.from('contacts').update(data).eq('id', id).eq('user_id', user.id)
+  const { error } = await supabase.from('contacts').update(data).eq('id', id)
   if (error) return { success: false, error: error.message }
 
   await supabase.from('activity_logs').insert({
@@ -153,7 +151,7 @@ export async function deleteContact(id: string, email: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { success: false, error: 'Not authenticated' }
 
-  const { error } = await supabase.from('contacts').delete().eq('id', id).eq('user_id', user.id)
+  const { error } = await supabase.from('contacts').delete().eq('id', id)
   if (error) return { success: false, error: error.message }
 
   await supabase.from('activity_logs').insert({
@@ -174,7 +172,6 @@ export async function bulkAssignTemplate(contactIds: string[], templateId: strin
     .from('contacts')
     .update({ template_id: templateId })
     .in('id', contactIds)
-    .eq('user_id', user.id)
 
   if (error) return { success: false, error: error.message }
 

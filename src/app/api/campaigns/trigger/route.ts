@@ -32,9 +32,7 @@ export async function POST(request: Request) {
       .select('*, email_templates ( id, template_name, subject, display_name, body )')
       .eq('id', campaignId)
 
-    if (user) {
-      query = query.eq('user_id', user.id)
-    }
+
 
     const { data: campaign, error: campErr } = await query.single()
 
@@ -78,7 +76,7 @@ export async function POST(request: Request) {
     const { data: userSettings } = await supabaseAdmin
       .from('user_settings')
       .select('*, email_templates ( id, template_name, subject, display_name, body )')
-      .eq('user_id', effectiveUserId)
+      .limit(1)
       .maybeSingle()
 
     const globalDefaultTemplate = userSettings?.email_templates
@@ -86,8 +84,8 @@ export async function POST(request: Request) {
     const { data: systemDefaultTemplate } = await supabaseAdmin
       .from('email_templates')
       .select('id, template_name, subject, display_name, body')
-      .eq('user_id', effectiveUserId)
       .eq('is_system_default', true)
+      .limit(1)
       .maybeSingle()
 
     let sentCount = 0

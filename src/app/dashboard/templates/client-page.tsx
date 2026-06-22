@@ -12,6 +12,7 @@ type Template = {
   display_name: string
   body: string
   is_draft?: boolean
+  is_system_default?: boolean
   created_at: string
 }
 

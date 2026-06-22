@@ -34,7 +34,6 @@ export async function updateTemplate(id: string, data: { template_name: string; 
     .from('email_templates')
     .update(data)
     .eq('id', id)
-    .eq('user_id', user.id)
 
   if (error) return { success: false as const, error: error.message }
 
@@ -57,7 +56,6 @@ export async function deleteTemplate(id: string, template_name: string) {
     .from('email_templates')
     .delete()
     .eq('id', id)
-    .eq('user_id', user.id)
 
   if (error) return { success: false as const, error: error.message }
 

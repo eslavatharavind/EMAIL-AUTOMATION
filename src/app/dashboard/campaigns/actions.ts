@@ -35,7 +35,6 @@ export async function updateCampaign(id: string, data: { name?: string; template
     .from('campaigns')
     .update(data)
     .eq('id', id)
-    .eq('user_id', user.id)
 
   if (error) return { success: false as const, error: error.message }
 
@@ -67,7 +66,6 @@ export async function deleteCampaign(id: string, name: string) {
     .from('campaigns')
     .delete()
     .eq('id', id)
-    .eq('user_id', user.id)
 
   if (error) return { success: false as const, error: error.message }
 
@@ -86,7 +84,6 @@ export async function addContactsToCampaign(campaignId: string, contactIds: stri
     const { data: contacts, error: fetchErr } = await supabase
       .from('contacts')
       .select('id')
-      .eq('user_id', user.id)
     if (fetchErr) return { success: false as const, error: fetchErr.message }
     idsToAdd = contacts.map((c: { id: string }) => c.id)
   } else {

@@ -19,65 +19,11 @@ const transporter = nodemailer.createTransport({
   },
 })
 
+import { provisionTemplateForUser } from './template-provisioning'
+
 // Ensures the user has a System Default Professional Template
 export async function ensureSystemDefaultTemplate(userId: string) {
-  // Check if it exists
-  const { data: existing } = await supabaseAdmin
-    .from('email_templates')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('is_system_default', true)
-    .maybeSingle()
-
-  if (existing) return existing.id;
-
-  const subject = `Welcome to {{company}}, {{name}}!`
-  const body = `
-<div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #334155; max-width: 600px; margin: 0 auto; padding: 32px 20px; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
-  <!-- Header -->
-  <div style="text-align: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 24px; margin-bottom: 32px;">
-    <h1 style="color: {{primary_color}}; margin: 0 0 20px 0; font-size: 24px;">{{company}}</h1>
-  </div>
-  <!-- Body -->
-  <h2 style="color: #0f172a; font-size: 20px; font-weight: 600; margin-top: 0;">Hello {{name}},</h2>
-  <p style="margin-bottom: 16px; font-size: 16px;">We are absolutely thrilled to connect with you. At {{company}}, we believe in fostering strong relationships and driving innovation.</p>
-  <p style="margin-bottom: 24px; font-size: 16px;">We noticed your exceptional background and would love to explore how we can collaborate. Our platform is designed to streamline your workflows and elevate your business.</p>
-  <!-- CTA -->
-  <div style="text-align: center; margin: 32px 0;">
-    <a href="{{company_website}}" style="background-color: {{primary_color}}; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; display: inline-block; transition: opacity 0.2s;">Get Started Today</a>
-  </div>
-  <!-- Footer -->
-  <div style="margin-top: 40px; padding-top: 24px; border-top: 1px solid #f1f5f9; color: #64748b; font-size: 14px;">
-    <p style="margin: 0 0 4px 0;">Best Regards,</p>
-    <p style="margin: 0; font-weight: 600; color: #334155;">{{display_name}}</p>
-    <p style="margin: 0;">{{company}}</p>
-    <p style="margin: 0;">{{company_phone}}</p>
-    <p style="margin: 0;">
-      <a href="mailto:{{sender_email}}" style="color: {{primary_color}}; text-decoration: none;">{{sender_email}}</a>
-    </p>
-  </div>
-</div>`
-
-  const { data: newTemplate, error } = await supabaseAdmin
-    .from('email_templates')
-    .insert({
-      user_id: userId,
-      template_name: 'Professional Default Template',
-      subject,
-      display_name: '{{display_name}}',
-      body,
-      is_system_default: true,
-      is_draft: false
-    })
-    .select('id')
-    .single()
-
-  if (error) {
-    console.error("[EMAIL-SERVICE] Error provisioning system template:", error.message)
-    return null
-  }
-
-  return newTemplate.id
+  return provisionTemplateForUser(userId)
 }
 
 // Variables allowed: {{name}}, {{email}}, {{company}}, {{phone_number}}, {{source}}, {{display_name}}, {{sender_email}}, {{primary_color}}, {{company_website}}, {{company_phone}}

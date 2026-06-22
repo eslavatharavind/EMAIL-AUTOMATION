@@ -20,7 +20,7 @@ export default async function ContactsPage() {
     const { data: userSettings } = await supabase
       .from('user_settings')
       .select('default_template_id')
-      .eq('user_id', user.id)
+      .limit(1)
       .maybeSingle()
     globalDefaultTemplateId = userSettings?.default_template_id || null
   }

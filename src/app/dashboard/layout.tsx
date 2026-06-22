@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import Sidebar from '@/components/dashboard/Sidebar'
 import Header from '@/components/dashboard/Header'
+import { provisionTemplateForUser } from '@/lib/template-provisioning'
 
 export default async function DashboardLayout({
   children,
@@ -9,6 +10,10 @@ export default async function DashboardLayout({
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
+
+  if (user) {
+    await provisionTemplateForUser(user.id)
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex">

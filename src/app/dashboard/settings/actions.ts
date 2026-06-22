@@ -19,11 +19,11 @@ export async function updateUserSettings(data: {
     return { success: false, error: 'Not authenticated' }
   }
 
-  // Check if settings exist
+  // Check if any settings exist in the system (since it's a shared workspace)
   const { data: existing } = await supabase
     .from('user_settings')
     .select('user_id')
-    .eq('user_id', user.id)
+    .limit(1)
     .maybeSingle()
 
   let error;
@@ -32,7 +32,7 @@ export async function updateUserSettings(data: {
     const { error: updateErr } = await supabase
       .from('user_settings')
       .update(data)
-      .eq('user_id', user.id)
+      .eq('user_id', existing.user_id)
     error = updateErr
   } else {
     const { error: insertErr } = await supabase

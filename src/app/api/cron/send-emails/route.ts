@@ -60,36 +60,20 @@ async function handler(request: Request) {
       return NextResponse.json({ message: 'No pending contacts found to process', sent: 0, failed: 0, total: 0 });
     }
 
-    // Pre-fetch user settings for all unique users involved
-    const userIds = new Set<string>()
-    campaignContacts.forEach(c => {
-      const camp = Array.isArray(c.campaigns) ? c.campaigns[0] : c.campaigns
-      if (camp?.user_id) userIds.add(camp.user_id)
-    })
-    globalContacts.forEach(c => { if (c.user_id) userIds.add(c.user_id) })
+    // Fetch global user settings
+    const { data: globalSettings } = await supabaseAdmin
+      .from('user_settings')
+      .select('*, email_templates ( id, template_name, subject, display_name, body )')
+      .limit(1)
+      .maybeSingle()
 
-    const userSettingsMap: Record<string, any> = {}
-    const systemDefaultMap: Record<string, any> = {}
-
-    if (userIds.size > 0) {
-      const userIdsArr = Array.from(userIds)
-      const { data: settings } = await supabaseAdmin
-        .from('user_settings')
-        .select('*, email_templates ( id, template_name, subject, display_name, body )')
-        .in('user_id', userIdsArr)
-      if (settings) {
-        settings.forEach(s => userSettingsMap[s.user_id] = s)
-      }
-
-      const { data: sysTemplates } = await supabaseAdmin
-        .from('email_templates')
-        .select('id, user_id, template_name, subject, display_name, body')
-        .in('user_id', userIdsArr)
-        .eq('is_system_default', true)
-      if (sysTemplates) {
-        sysTemplates.forEach(t => systemDefaultMap[t.user_id] = t)
-      }
-    }
+    // Fetch global system default template
+    const { data: globalSystemDefaultTemplate } = await supabaseAdmin
+      .from('email_templates')
+      .select('id, template_name, subject, display_name, body')
+      .eq('is_system_default', true)
+      .limit(1)
+      .maybeSingle()
 
     let sentCount = 0;
     let failedCount = 0;
@@ -103,9 +87,9 @@ async function handler(request: Request) {
       
       const templateRaw = campaign.email_templates;
       const campaignTemplate = Array.isArray(templateRaw) ? templateRaw[0] : templateRaw;
-      const userSettings = userSettingsMap[campaign.user_id] || {}
+      const userSettings = globalSettings || {}
       const globalDefaultTemplate = userSettings.email_templates
-      const systemDefaultTemplate = systemDefaultMap[campaign.user_id]
+      const systemDefaultTemplate = globalSystemDefaultTemplate
 
       const templateOptions = await resolveTemplate(
         campaignTemplate,
@@ -128,9 +112,9 @@ async function handler(request: Request) {
 
     // 2. Process Global Pending Contacts (No Campaign)
     for (const contact of globalContacts) {
-      const userSettings = userSettingsMap[contact.user_id] || {}
+      const userSettings = globalSettings || {}
       const globalDefaultTemplate = userSettings.email_templates
-      const systemDefaultTemplate = systemDefaultMap[contact.user_id]
+      const systemDefaultTemplate = globalSystemDefaultTemplate
       const contactTemplate = contact.email_templates
 
       const templateOptions = await resolveTemplate(

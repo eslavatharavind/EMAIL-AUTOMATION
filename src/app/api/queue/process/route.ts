@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     const { data: userSettings } = await supabaseAdmin
       .from('user_settings')
       .select('*, email_templates ( id, template_name, subject, display_name, body )')
-      .eq('user_id', user.id)
+      .limit(1)
       .maybeSingle()
 
     const globalDefaultTemplate = userSettings?.email_templates
@@ -32,8 +32,8 @@ export async function POST(request: Request) {
     const { data: systemDefaultTemplate } = await supabaseAdmin
       .from('email_templates')
       .select('id, template_name, subject, display_name, body')
-      .eq('user_id', user.id)
       .eq('is_system_default', true)
+      .limit(1)
       .maybeSingle()
 
     // 1. Fetch pending campaign contacts
@@ -45,7 +45,6 @@ export async function POST(request: Request) {
         contacts!inner ( id, name, email, company, phone_number, source )
       `)
       .eq('campaigns.status', 'running')
-      .eq('campaigns.user_id', user.id)
       .in('status', ['pending', 'failed'])
       .lt('attempts', 3)
       .limit(50)
@@ -61,7 +60,6 @@ export async function POST(request: Request) {
         id, name, email, company, phone_number, source, user_id,
         email_templates ( id, template_name, subject, display_name, body )
       `)
-      .eq('user_id', user.id)
       .eq('status', 'pending')
       .limit(50)
 

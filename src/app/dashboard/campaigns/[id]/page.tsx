@@ -16,7 +16,6 @@ export default async function CampaignDetailsPage({ params }: { params: Promise<
     .from('campaigns')
     .select(`*, email_templates ( id, template_name, subject, body )`)
     .eq('id', id)
-    .eq('user_id', user.id)
     .single()
 
   if (!campaign) redirect('/dashboard/campaigns')
@@ -34,13 +33,11 @@ export default async function CampaignDetailsPage({ params }: { params: Promise<
   const { data: allContacts } = await supabase
     .from('contacts')
     .select('id, name, email, company')
-    .eq('user_id', user.id)
 
   // Fetch user templates
   const { data: templates } = await supabase
     .from('email_templates')
     .select('id, template_name, is_draft')
-    .eq('user_id', user.id)
 
   return (
     <CampaignDetailsClient 

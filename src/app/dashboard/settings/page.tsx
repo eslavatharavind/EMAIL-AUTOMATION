@@ -16,7 +16,7 @@ export default async function SettingsPage() {
     const { data } = await supabase
       .from('user_settings')
       .select('*')
-      .eq('user_id', user.id)
+      .limit(1)
       .maybeSingle()
     
     initialSettings = data || null

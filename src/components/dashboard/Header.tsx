@@ -26,6 +26,7 @@ const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, exact: true },
   { href: '/dashboard/contacts', label: 'Contacts', icon: Users },
   { href: '/dashboard/campaigns', label: 'Campaigns', icon: Megaphone },
+  { href: '/dashboard/templates', label: 'Templates', icon: FileText },
   { href: '/dashboard/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/dashboard/activity', label: 'Activity', icon: Activity },
   { href: '/dashboard/reports', label: 'Reports', icon: FileText },
