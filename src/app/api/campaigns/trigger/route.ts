@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import nodemailer from 'nodemailer'
 
@@ -6,11 +7,7 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-    // Parse campaignId from body
+    // Parse campaignId from body first
     let campaignId = ''
     try {
       const body = await request.json()
@@ -23,20 +20,40 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'campaignId is required' }, { status: 400 })
     }
 
-    // 1. Fetch campaign and verify ownership
-    const { data: campaign, error: campErr } = await supabase
+    // Initialize Supabase Admin client for server-to-server operations
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !supabaseKey) {
+      return NextResponse.json({ error: 'Missing Supabase credentials' }, { status: 500 })
+    }
+    const supabaseAdmin = createSupabaseAdmin(supabaseUrl, supabaseKey)
+
+    // Verify session
+    const supabaseSession = await createClient()
+    const { data: { user } } = await supabaseSession.auth.getUser()
+
+    // 1. Fetch campaign securely
+    let query = supabaseAdmin
       .from('campaigns')
       .select('*, email_templates ( id, template_name, subject, display_name, body )')
       .eq('id', campaignId)
-      .eq('user_id', user.id)
-      .single()
 
-    if (campErr || !campaign) {
-      return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
+    // Only enforce user_id if called from an active browser session
+    // If no session exists, we rely on the unguessable UUID (Service Role bypasses RLS)
+    if (user) {
+      query = query.eq('user_id', user.id)
     }
 
+    const { data: campaign, error: campErr } = await query.single()
+
+    if (campErr || !campaign) {
+      return NextResponse.json({ error: 'Campaign not found or unauthorized' }, { status: 404 })
+    }
+
+    const effectiveUserId = user?.id || campaign.user_id
+
     // 2. Fetch contacts assigned to the campaign
-    const { data: campaignContacts, error: ccErr } = await supabase
+    const { data: campaignContacts, error: ccErr } = await supabaseAdmin
       .from('campaign_contacts')
       .select(`
         id, campaign_id, contact_id, attempts, status,
@@ -62,10 +79,10 @@ export async function POST(request: Request) {
     }
 
     // Update campaign status to 'running'
-    await supabase.from('campaigns').update({ status: 'running' }).eq('id', campaignId)
-    await supabase.from('activity_logs').insert({
+    await supabaseAdmin.from('campaigns').update({ status: 'running' }).eq('id', campaignId)
+    await supabaseAdmin.from('activity_logs').insert({
       action: 'campaign_started',
-      user_id: user.id,
+      user_id: effectiveUserId,
       details: `Campaign "${campaign.name}" started`
     })
 
@@ -142,7 +159,7 @@ export async function POST(request: Request) {
       const newStatus = sendError ? 'failed' : 'sent'
       const newAttempts = item.attempts + 1
 
-      await supabase
+      await supabaseAdmin
         .from('campaign_contacts')
         .update({
           status: newStatus,
@@ -153,7 +170,7 @@ export async function POST(request: Request) {
         .eq('id', item.id)
 
       // Also update the global contacts table status
-      await supabase
+      await supabaseAdmin
         .from('contacts')
         .update({
           status: newStatus,
@@ -161,10 +178,10 @@ export async function POST(request: Request) {
         })
         .eq('id', contact.id)
 
-      await supabase.from('activity_logs').insert({
+      await supabaseAdmin.from('activity_logs').insert({
         action: newStatus === 'sent' ? 'email_sent' : 'email_failed',
         contact_email: contact.email,
-        user_id: user.id,
+        user_id: effectiveUserId,
         details: newStatus === 'sent' 
           ? `Campaign: ${campaign.name}` 
           : `Campaign: ${campaign.name} - Failed (Attempt ${newAttempts}/3): ${sendError?.message || 'Unknown'}`
@@ -178,10 +195,10 @@ export async function POST(request: Request) {
 
     if (remainingPendingCount === 0) {
       // If we finished processing all contacts in this trigger call, set status to completed
-      await supabase.from('campaigns').update({ status: 'completed' }).eq('id', campaignId)
-      await supabase.from('activity_logs').insert({
+      await supabaseAdmin.from('campaigns').update({ status: 'completed' }).eq('id', campaignId)
+      await supabaseAdmin.from('activity_logs').insert({
         action: 'campaign_completed',
-        user_id: user.id,
+        user_id: effectiveUserId,
         details: `Campaign "${campaign.name}" completed`
       })
     } else {

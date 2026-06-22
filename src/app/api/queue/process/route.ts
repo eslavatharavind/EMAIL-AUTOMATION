@@ -5,23 +5,14 @@ import nodemailer from 'nodemailer'
 
 export const dynamic = 'force-dynamic'
 
-/**
- * POST /api/queue/process
- * 
- * Manual "Process Pending Queue" endpoint for the dashboard.
- * Protected by Supabase session auth (user must be logged in).
- * This is separate from /api/cron/send-emails which requires QStash signature.
- */
 export async function POST(request: Request) {
   try {
-    // 1. Verify the user is authenticated via Supabase session
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // 2. Set up Supabase admin client
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     if (!supabaseUrl || !supabaseKey) {
@@ -29,7 +20,6 @@ export async function POST(request: Request) {
     }
     const supabaseAdmin = createSupabaseAdmin(supabaseUrl, supabaseKey)
 
-    // 3. Set up Zoho SMTP transporter
     const zohoEmail = process.env.ZOHO_EMAIL
     const zohoPassword = process.env.ZOHO_PASSWORD
     const zohoHost = process.env.ZOHO_SMTP_HOST || 'smtp.zoho.in'
@@ -51,7 +41,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: `Zoho SMTP connection failed: ${verifyError.message}` }, { status: 500 })
     }
 
-    // 4. Fetch pending campaign contacts (only for this user's campaigns)
+    // 1. Fetch pending campaign contacts (only for this user's campaigns)
     const { data: campaignContacts, error: fetchError } = await supabaseAdmin
       .from('campaign_contacts')
       .select(`
@@ -69,11 +59,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: `Database error: ${fetchError.message}` }, { status: 500 })
     }
 
-    if (!campaignContacts || campaignContacts.length === 0) {
-      return NextResponse.json({ message: 'No pending campaign contacts found', sent: 0, total: 0 })
+    // 2. Fetch global pending contacts (only for this user)
+    const { data: globalContacts, error: globalErr } = await supabaseAdmin
+      .from('contacts')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('status', 'pending')
+      .limit(50)
+
+    if (globalErr) {
+      return NextResponse.json({ error: `Database error: ${globalErr.message}` }, { status: 500 })
     }
 
-    // 5. Process and send emails
+    const cc = campaignContacts || []
+    const gc = globalContacts || []
+
+    if (cc.length === 0 && gc.length === 0) {
+      return NextResponse.json({ message: 'No pending contacts found', sent: 0, failed: 0, total: 0 })
+    }
+
     let sentCount = 0
     let failedCount = 0
 
@@ -91,7 +95,8 @@ export async function POST(request: Request) {
         .replace(/{{source}}/g, contact.source || '')
     }
 
-    for (const item of campaignContacts as any[]) {
+    // Process Campaign Contacts
+    for (const item of cc as any[]) {
       const contact = Array.isArray(item.contacts) ? item.contacts[0] : item.contacts
       const campaign = Array.isArray(item.campaigns) ? item.campaigns[0] : item.campaigns
       if (!contact || !campaign) continue
@@ -116,39 +121,52 @@ export async function POST(request: Request) {
       const newStatus = sendError ? 'failed' : 'sent'
       const newAttempts = (item.attempts || 0) + 1
 
-      // Update campaign_contacts status
-      await supabaseAdmin
-        .from('campaign_contacts')
-        .update({ status: newStatus, attempts: newAttempts, error_message: sendError?.message || null, sent_at: newStatus === 'sent' ? new Date().toISOString() : null })
-        .eq('id', item.id)
+      await supabaseAdmin.from('campaign_contacts').update({ status: newStatus, attempts: newAttempts, error_message: sendError?.message || null, sent_at: newStatus === 'sent' ? new Date().toISOString() : null }).eq('id', item.id)
+      await supabaseAdmin.from('contacts').update({ status: newStatus, sent_at: newStatus === 'sent' ? new Date().toISOString() : null }).eq('id', contact.id)
 
-      // Also sync global contacts table
-      await supabaseAdmin
-        .from('contacts')
-        .update({ status: newStatus, sent_at: newStatus === 'sent' ? new Date().toISOString() : null })
-        .eq('id', contact.id)
-
-      // Log the activity
       await supabaseAdmin.from('activity_logs').insert({
         action: newStatus === 'sent' ? 'email_sent' : 'email_failed',
         contact_email: contact.email,
         user_id: campaign.user_id,
-        details: newStatus === 'sent'
-          ? `Campaign: ${campaign.name}`
-          : `Campaign: ${campaign.name} - Failed (Attempt ${newAttempts}/3): ${sendError?.message || 'Unknown'}`
+        details: newStatus === 'sent' ? `Campaign: ${campaign.name}` : `Campaign: ${campaign.name} - Failed (Attempt ${newAttempts}/3): ${sendError?.message || 'Unknown'}`
       })
 
-      if (newStatus === 'sent') sentCount++
-      else failedCount++
+      if (newStatus === 'sent') sentCount++; else failedCount++;
     }
 
-    return NextResponse.json({ sent: sentCount, failed: failedCount, total: campaignContacts.length })
+    // Process Global Pending Contacts
+    for (const contact of gc as any[]) {
+      const finalSubject = `Hello ${contact.name} - Welcome to MailFlow!`
+      const finalHtml = `<p>Hi ${contact.name},</p><p>We are excited to connect with you from ${contact.company || 'your company'}!</p><br><p>Best,<br>MailFlow Team</p>`
+      const plainText = finalHtml.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
+
+      let sendError = null
+      try {
+        await transporter.sendMail({ from: zohoEmail, to: contact.email, subject: finalSubject, html: finalHtml, text: plainText })
+        await new Promise(resolve => setTimeout(resolve, 500))
+      } catch (err: any) {
+        sendError = err
+      }
+
+      const newStatus = sendError ? 'failed' : 'sent'
+      await supabaseAdmin.from('contacts').update({ status: newStatus, sent_at: newStatus === 'sent' ? new Date().toISOString() : null }).eq('id', contact.id)
+
+      await supabaseAdmin.from('activity_logs').insert({
+        action: newStatus === 'sent' ? 'email_sent' : 'email_failed',
+        contact_email: contact.email,
+        user_id: contact.user_id,
+        details: newStatus === 'sent' ? `Global Contact Welcome Email Sent` : `Global Contact Welcome Failed: ${sendError?.message || 'Unknown'}`
+      })
+
+      if (newStatus === 'sent') sentCount++; else failedCount++;
+    }
+
+    return NextResponse.json({ sent: sentCount, failed: failedCount, total: cc.length + gc.length })
   } catch (error: any) {
     return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 })
   }
 }
 
-// Also support GET for convenience (same logic)
 export async function GET(request: Request) {
   return POST(request)
 }
