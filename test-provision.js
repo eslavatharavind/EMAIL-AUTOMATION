@@ -18,7 +18,7 @@ async function test() {
       .maybeSingle()
       
     if (eErr) console.error('eErr:', eErr)
-    const subject = `A question about your hiring process`
+    const subject = `Are you spending too much time outreaching candidates?`
     const body = `<p>Hello {{name}},</p>
 <p>I noticed your team has been actively hiring, so I thought I'd reach out.</p>
 <p>We understand that hiring can be time-consuming – from reviewing hundreds of resumes and coordinating interviews to evaluating candidates. We built <strong>RecruiterVibe AI</strong> to automate your hiring process.</p>
