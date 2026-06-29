@@ -39,9 +39,9 @@ export async function provisionTemplateForUser(userId: string) {
 - Smart Interviewing<br>
 - Evaluation Scores and Reports</p>
 <p>This allows your team to spend less time on repetitive tasks and spend more time engaging with the best candidates.</p>
-<p><strong>Explore our platform</strong><br>
+<p><strong>Explore our platform :</strong><br>
 <a href="https://www.recruitervibe.in/">https://www.recruitervibe.in/</a></p>
-<p><strong>Watch a quick demo</strong><br>
+<p><strong>Watch a quick demo :</strong><br>
 <a href="https://www.youtube.com/watch?v=htIaRIu35NI">https://www.youtube.com/watch?v=htIaRIu35NI</a></p>
 <p>If you'd like, I'd be happy to arrange a short demo or answer any questions.</p>
 <p>Best regards,<br>
