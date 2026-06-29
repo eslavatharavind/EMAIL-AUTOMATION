@@ -28,7 +28,7 @@ export async function provisionTemplateForUser(userId: string) {
 
     console.log(`[TEMPLATE-PROVISIONING] No system default template found. Creating one for user: ${userId}`);
 
-    const subject = `Simplify Your Hiring Process with RecruiterVibe AI`
+    const subject = `A question about your hiring process`
     const body = `<p>Hello {{name}},</p>
 <p>I noticed your team has been actively hiring, so I thought I'd reach out.</p>
 <p>We understand that hiring can be time-consuming – from reviewing hundreds of resumes and coordinating interviews to evaluating candidates. We built <strong>RecruiterVibe AI</strong> to automate your hiring process.</p>
@@ -55,7 +55,7 @@ RecruiterVibe AI Team,</p>`
         user_id: userId,
         template_name: 'Default Template',
         subject,
-        display_name: 'RecruiterVibe AI',
+        display_name: 'Aravind From RecruiterVibe AI',
         body,
         is_system_default: true,
         is_draft: false
