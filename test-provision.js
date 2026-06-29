@@ -35,7 +35,7 @@ async function test() {
 <a href="https://www.youtube.com/watch?v=htIaRIu35NI">https://www.youtube.com/watch?v=htIaRIu35NI</a></p>
 <p>If you'd like, I'd be happy to arrange a short demo or answer any questions.</p>
 <p>Best regards,<br>
-{{display_name}}<br>
+{{name}}<br>
 RecruiterVibe AI Team,</p>`
 
     if (existing) {
