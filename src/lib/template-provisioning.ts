@@ -6,7 +6,7 @@ const supabaseAdmin = createSupabaseAdmin(supabaseUrl, supabaseKey)
 
 export async function provisionTemplateForUser(userId: string) {
   console.log(`[TEMPLATE-PROVISIONING] Started checking system default template for user: ${userId}`);
-  
+
   try {
     // Check if system default template exists for this user
     const { data: existing, error: checkError } = await supabaseAdmin
@@ -41,20 +41,19 @@ export async function provisionTemplateForUser(userId: string) {
   <li>Evaluation Scores and Reports</li>
 </ul>
 <p>This allows your team to spend less time on repetitive tasks and spend more time engaging with the best candidates.</p>
-<p>You can explore the platform here:</p>
-<p><a href="https://recruitervibe.in/">https://recruitervibe.in/</a></p>
-<p>Or watch a quick demo:</p>
-<p><a href="https://www.youtube.com/watch?v=htIaRIu35NI">https://www.youtube.com/watch?v=htIaRIu35NI</a></p>
+<p><b>Explore our platform</b> <a href="https://recruitervibe.in/">https://recruitervibe.in/</a></p>
+<p><b>Watch a quick demo</b> <a href="https://www.youtube.com/watch?v=htIaRIu35NI">https://www.youtube.com/watch?v=htIaRIu35NI</a></p>
 <p>If you'd like, I'd be happy to arrange a short demo or answer any questions.</p>
-<p>Best regards,</p>
-<p>RecruiterVibe AI<br>
-RecruiterVibe AI Team</p>`
+<p>Best regards,<br>
+{{name}}<br>
+RecruiterVibe AI</p>`
+
 
     const { data: newTemplate, error: insertError } = await supabaseAdmin
       .from('email_templates')
       .insert({
         user_id: userId,
-        template_name: 'RecruiterVibe AI Outreach',
+        template_name: 'Default Template',
         subject,
         display_name: 'RecruiterVibe AI',
         body,
@@ -65,15 +64,15 @@ RecruiterVibe AI Team</p>`
       .single()
 
     if (insertError) {
-      console.error(`[TEMPLATE-PROVISIONING] Error inserting system default template for user ${userId}:`, insertError.message);
+      console.error(`[TEMPLATE - PROVISIONING] Error inserting system default template for user ${ userId }: `, insertError.message);
       return null;
     }
 
-    console.log(`[TEMPLATE-PROVISIONING] Successfully provisioned system default template: ${newTemplate.id} for user ${userId}`);
+    console.log(`[TEMPLATE - PROVISIONING] Successfully provisioned system default template: ${ newTemplate.id } for user ${ userId }`);
     return newTemplate.id;
 
   } catch (error: any) {
-    console.error(`[TEMPLATE-PROVISIONING] Exception caught while provisioning for user ${userId}:`, error.message);
+    console.error(`[TEMPLATE - PROVISIONING] Exception caught while provisioning for user ${ userId }: `, error.message);
     return null;
   }
 }
